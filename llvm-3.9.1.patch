@@ -1,0 +1,25 @@
+diff -ur llvm-3.9.1-original/tools/clang/include/clang/StaticAnalyzer/Checkers/Checkers.td llvm/tools/clang/include/clang/StaticAnalyzer/Checkers/Checkers.td
+--- llvm-3.9.1-original/tools/clang/include/clang/StaticAnalyzer/Checkers/Checkers.td	2016-07-19 03:12:49.000000000 +0700
++++ llvm/tools/clang/include/clang/StaticAnalyzer/Checkers/Checkers.td	2016-12-28 15:22:59.000000000 +0700
+@@ -342,6 +342,10 @@
+   HelpText<"Check for overflows in the arguments to malloc()">,
+   DescFile<"MallocOverflowSecurityChecker.cpp">;
+ 
++def KernelMemoryDisclosureChecker : Checker<"KernelMemoryDisclosure">,
++  HelpText<"Check for uninitialized kernel memory disclosure">,
++  DescFile<"KernelMemoryDisclosureChecker.cpp">;
++
+ } // end "alpha.security"
+ 
+ //===----------------------------------------------------------------------===//
+diff -ur llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Checkers/CMakeLists.txt llvm/tools/clang/lib/StaticAnalyzer/Checkers/CMakeLists.txt
+--- llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Checkers/CMakeLists.txt	2016-07-19 03:12:49.000000000 +0700
++++ llvm/tools/clang/lib/StaticAnalyzer/Checkers/CMakeLists.txt	2016-12-28 15:27:32.000000000 +0700
+@@ -36,6 +36,7 @@
+   IvarInvalidationChecker.cpp
+   LLVMConventionsChecker.cpp
+   LocalizationChecker.cpp
++  KernelMemoryDisclosureChecker.cpp
+   MacOSKeychainAPIChecker.cpp
+   MacOSXAPIChecker.cpp
+   MallocChecker.cpp

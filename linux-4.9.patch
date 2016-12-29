@@ -1,0 +1,18 @@
+--- Makefile.orig	2016-12-29 10:46:26.056197397 +0000
++++ Makefile	2016-12-29 10:47:00.636173008 +0000
+@@ -797,11 +797,11 @@
+ KBUILD_ARFLAGS := $(call ar-option,D)
+ 
+ # check for 'asm goto'
+-ifeq ($(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC)), y)
+-	KBUILD_CFLAGS += -DCC_HAVE_ASM_GOTO
+-	KBUILD_AFLAGS += -DCC_HAVE_ASM_GOTO
+-endif
++#ifeq ($(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC)), y)
++#	KBUILD_CFLAGS += -DCC_HAVE_ASM_GOTO
++#	KBUILD_AFLAGS += -DCC_HAVE_ASM_GOTO
++#endif
+ 
+ include scripts/Makefile.kasan
+ include scripts/Makefile.extrawarn
+ include scripts/Makefile.ubsan

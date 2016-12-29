@@ -1,0 +1,47 @@
+diff --git a/Makefile b/Makefile
+index 40f52f5..88ffaa5 100644
+--- a/Makefile
++++ b/Makefile
+@@ -375,7 +375,6 @@ KBUILD_CPPFLAGS := -D__KERNEL__
+ 
+ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
+ 		   -fno-strict-aliasing -fno-common \
+-		   -Werror-implicit-function-declaration \
+ 		   -Wno-format-security \
+ 		   -fno-delete-null-pointer-checks
+ KBUILD_AFLAGS_KERNEL :=
+diff --git a/arch/arm64/include/asm/kgdb.h b/arch/arm64/include/asm/kgdb.h
+index 3c8aafc..dd078f3 100644
+--- a/arch/arm64/include/asm/kgdb.h
++++ b/arch/arm64/include/asm/kgdb.h
+@@ -29,7 +29,7 @@
+ 
+ static inline void arch_kgdb_breakpoint(void)
+ {
+-	asm ("brk %0" : : "I" (KDBG_COMPILED_DBG_BRK_IMM));
++	asm ("brk %0" : : "i" (KDBG_COMPILED_DBG_BRK_IMM));
+ }
+ 
+ extern void kgdb_handle_bus_error(void);
+diff --git a/arch/arm64/include/asm/spinlock.h b/arch/arm64/include/asm/spinlock.h
+index 9dfd40d..bd1e9a8 100644
+--- a/arch/arm64/include/asm/spinlock.h
++++ b/arch/arm64/include/asm/spinlock.h
+@@ -58,7 +58,7 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
+ 	/* We got the lock. Critical section starts here. */
+ "3:"
+ 	: "=&r" (lockval), "=&r" (newval), "=&r" (tmp), "+Q" (*lock)
+-	: "Q" (lock->owner), "I" (1 << TICKET_SHIFT)
++	: "Q" (lock->owner), "i" (1 << TICKET_SHIFT)
+ 	: "memory");
+ }
+ 
+@@ -76,7 +76,7 @@ static inline int arch_spin_trylock(arch_spinlock_t *lock)
+ "	cbnz	%w1, 1b\n"
+ "2:"
+ 	: "=&r" (lockval), "=&r" (tmp), "+Q" (*lock)
+-	: "I" (1 << TICKET_SHIFT)
++	: "i" (1 << TICKET_SHIFT)
+ 	: "memory");
+ 
+ 	return !tmp;

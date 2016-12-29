@@ -1,0 +1,248 @@
+diff --git a/Makefile b/Makefile
+index cedf406..723574c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -399,9 +399,8 @@ LINUXINCLUDE    := \
+ 
+ KBUILD_CPPFLAGS := -D__KERNEL__
+ 
+-KBUILD_CFLAGS   := -Werror -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
++KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
+ 		   -fno-strict-aliasing -fno-common \
+-		   -Werror-implicit-function-declaration \
+ 		   -Wno-format-security \
+ 		   -std=gnu89
+ 
+diff --git a/arch/arm64/include/asm/kgdb.h b/arch/arm64/include/asm/kgdb.h
+index f69f69c..6972359 100644
+--- a/arch/arm64/include/asm/kgdb.h
++++ b/arch/arm64/include/asm/kgdb.h
+@@ -29,7 +29,7 @@
+ 
+ static inline void arch_kgdb_breakpoint(void)
+ {
+-	asm ("brk %0" : : "I" (KGDB_COMPILED_DBG_BRK_IMM));
++	asm ("brk %0" : : "i" (KGDB_COMPILED_DBG_BRK_IMM));
+ }
+ 
+ extern void kgdb_handle_bus_error(void);
+diff --git a/arch/arm64/include/asm/spinlock.h b/arch/arm64/include/asm/spinlock.h
+index bb866d5..2aef255 100644
+--- a/arch/arm64/include/asm/spinlock.h
++++ b/arch/arm64/include/asm/spinlock.h
+@@ -58,7 +58,7 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
+ 	/* We got the lock. Critical section starts here. */
+ "3:"
+ 	: "=&r" (lockval), "=&r" (newval), "=&r" (tmp), "+Q" (*lock)
+-	: "Q" (lock->owner), "I" (1 << TICKET_SHIFT)
++	: "Q" (lock->owner), "i" (1 << TICKET_SHIFT)
+ 	: "memory");
+ }
+ 
+@@ -76,7 +76,7 @@ static inline int arch_spin_trylock(arch_spinlock_t *lock)
+ "	cbnz	%w1, 1b\n"
+ "2:"
+ 	: "=&r" (lockval), "=&r" (tmp), "+Q" (*lock)
+-	: "I" (1 << TICKET_SHIFT)
++	: "i" (1 << TICKET_SHIFT)
+ 	: "memory");
+ 
+ 	return !tmp;
+diff --git a/arch/arm64/include/asm/thread_info.h b/arch/arm64/include/asm/thread_info.h
+index e727d81..b17cc18 100644
+--- a/arch/arm64/include/asm/thread_info.h
++++ b/arch/arm64/include/asm/thread_info.h
+@@ -71,7 +71,11 @@ struct thread_info {
+ /*
+  * how to get the current stack pointer from C
+  */
++#ifdef __llvm__
++static unsigned long current_stack_pointer;
++#else
+ register unsigned long current_stack_pointer asm ("sp");
++#endif
+ 
+ /*
+  * how to get the thread information struct from C
+diff --git a/drivers/media/platform/msm/vidc/msm_vidc.c b/drivers/media/platform/msm/vidc/msm_vidc.c
+index 99e7115..179b264 100644
+--- a/drivers/media/platform/msm/vidc/msm_vidc.c
++++ b/drivers/media/platform/msm/vidc/msm_vidc.c
+@@ -1336,8 +1336,6 @@ int msm_vidc_destroy(struct msm_vidc_inst *inst)
+ 	return 0;
+ }
+ 
+-int msm_vidc_close(void *instance)
+-{
+ 	void close_helper(struct kref *kref)
+ 	{
+ 		struct msm_vidc_inst *inst = container_of(kref,
+@@ -1346,6 +1344,8 @@ int msm_vidc_close(void *instance)
+ 		msm_vidc_destroy(inst);
+ 	}
+ 
++int msm_vidc_close(void *instance)
++{
+ 	struct msm_vidc_inst *inst = instance;
+ 	struct buffer_info *bi, *dummy;
+ 	int rc = 0;
+diff --git a/drivers/media/platform/msm/vidc/msm_vidc_common.c b/drivers/media/platform/msm/vidc/msm_vidc_common.c
+index a639c28..29ae0cb 100644
+--- a/drivers/media/platform/msm/vidc/msm_vidc_common.c
++++ b/drivers/media/platform/msm/vidc/msm_vidc_common.c
+@@ -714,8 +714,6 @@ static void handle_sys_init_done(enum hal_command_response cmd, void *data)
+ 	return;
+ }
+ 
+-void put_inst(struct msm_vidc_inst *inst)
+-{
+ 	void put_inst_helper(struct kref *kref)
+ 	{
+ 		struct msm_vidc_inst *inst = container_of(kref,
+@@ -724,6 +722,8 @@ void put_inst(struct msm_vidc_inst *inst)
+ 		msm_vidc_destroy(inst);
+ 	}
+ 
++void put_inst(struct msm_vidc_inst *inst)
++{
+ 	if (!inst)
+ 		return;
+ 
+diff --git a/drivers/media/platform/msm/vidc/msm_vidc_res_parse.c b/drivers/media/platform/msm/vidc/msm_vidc_res_parse.c
+index cddcb6f..072393e 100644
+--- a/drivers/media/platform/msm/vidc/msm_vidc_res_parse.c
++++ b/drivers/media/platform/msm/vidc/msm_vidc_res_parse.c
+@@ -52,13 +52,13 @@ fail_read:
+ 	return 0;
+ }
+ 
+-static inline enum imem_type read_imem_type(struct platform_device *pdev)
+-{
+ 	bool is_compatible(char *compat)
+ 	{
+ 		return !!of_find_compatible_node(NULL, NULL, compat);
+ 	}
+ 
++static inline enum imem_type read_imem_type(struct platform_device *pdev)
++{
+ 	return is_compatible("qcom,msm-ocmem") ? IMEM_OCMEM :
+ 		is_compatible("qcom,msm-vmem") ? IMEM_VMEM :
+ 						IMEM_NONE;
+@@ -513,12 +513,6 @@ error:
+ 	return rc;
+ }
+ 
+-static int msm_vidc_load_freq_table(struct msm_vidc_platform_resources *res)
+-{
+-	int rc = 0;
+-	int num_elements = 0;
+-	struct platform_device *pdev = res->pdev;
+-
+ 	/* A comparator to compare loads (needed later on) */
+ 	int cmp(const void *a, const void *b)
+ 	{
+@@ -527,6 +521,12 @@ static int msm_vidc_load_freq_table(struct msm_vidc_platform_resources *res)
+ 			((struct load_freq_table *)a)->load;
+ 	}
+ 
++static int msm_vidc_load_freq_table(struct msm_vidc_platform_resources *res)
++{
++	int rc = 0;
++	int num_elements = 0;
++	struct platform_device *pdev = res->pdev;
++
+ 	if (!of_find_property(pdev->dev.of_node, "qcom,load-freq-tbl", NULL)) {
+ 		/* qcom,load-freq-tbl is an optional property.  It likely won't
+ 		 * be present on cores that we can't clock scale on. */
+diff --git a/drivers/platform/msm/mhi/mhi_ssr.c b/drivers/platform/msm/mhi/mhi_ssr.c
+index 8ee3ded..b644693 100644
+--- a/drivers/platform/msm/mhi/mhi_ssr.c
++++ b/drivers/platform/msm/mhi/mhi_ssr.c
+@@ -10,10 +10,10 @@
+  * GNU General Public License for more details.
+  */
+ 
+-#include <mhi_sys.h>
+-#include <mhi.h>
+-#include <mhi_bhi.h>
+-#include <mhi_hwio.h>
++#include "mhi_sys.h"
++#include "mhi.h"
++#include "mhi_bhi.h"
++#include "mhi_hwio.h"
+ 
+ #include <soc/qcom/subsystem_restart.h>
+ #include <soc/qcom/subsystem_notif.h>
+diff --git a/drivers/power/qpnp-fg.c b/drivers/power/qpnp-fg.c
+index a7842de..2a38436 100644
+--- a/drivers/power/qpnp-fg.c
++++ b/drivers/power/qpnp-fg.c
+@@ -636,6 +636,7 @@ struct fg_chip {
+ 	struct delayed_work	check_sanity_work;
+ 	struct fg_wakeup_source	sanity_wakeup_source;
+ 	u8			last_beat_count;
++#define CONFIG_HTC_BATT
+ #ifdef CONFIG_HTC_BATT
+ 	struct delayed_work	clear_empty_soc_irq_counter;
+ 	struct delayed_work	rearm_empty_soc_irq_work;
+diff --git a/include/linux/cpu.h b/include/linux/cpu.h
+index 0b7928f..b3433a3 100644
+--- a/include/linux/cpu.h
++++ b/include/linux/cpu.h
+@@ -26,6 +26,20 @@ struct cpu {
+ 	struct device dev;
+ };
+ 
++struct cpu_pstate_pwr {
++	unsigned int freq;
++	uint32_t power;
++};
++
++struct cpu_pwr_stats {
++	int cpu;
++	long temp;
++	struct cpu_pstate_pwr *ptable;
++	bool throttling;
++	int len;
++};
++
++
+ extern int register_cpu(struct cpu *cpu, int num);
+ extern struct device *get_cpu_device(unsigned cpu);
+ extern bool cpu_is_hotpluggable(unsigned cpu);
+diff --git a/include/linux/power_supply.h b/include/linux/power_supply.h
+index 87ee045..430301a 100644
+--- a/include/linux/power_supply.h
++++ b/include/linux/power_supply.h
+@@ -9,6 +9,7 @@
+  *
+  *  You may use this code as per GPL version 2
+  */
++#define CONFIG_HTC_BATT
+ 
+ #ifndef __LINUX_POWER_SUPPLY_H__
+ #define __LINUX_POWER_SUPPLY_H__
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 50885d9..cb2599f 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -19,6 +19,7 @@
+  *  Adaptive scheduling granularity, math enhancements by Peter Zijlstra
+  *  Copyright (C) 2007 Red Hat, Inc., Peter Zijlstra <pzijlstr@redhat.com>
+  */
++#define CONFIG_CPU_FREQ_GOV_SCHED
+ 
+ #include <linux/latencytop.h>
+ #include <linux/sched.h>
+diff --git a/sound/soc/msm/msm8996.c b/sound/soc/msm/msm8996.c
+index b39d636..fd66396 100644
+--- a/sound/soc/msm/msm8996.c
++++ b/sound/soc/msm/msm8996.c
+@@ -10,6 +10,7 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  */
++#define CONFIG_USE_CODEC_MBHC
+ 
+ #include <linux/clk.h>
+ #include <linux/delay.h>
