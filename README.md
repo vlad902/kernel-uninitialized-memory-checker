@@ -13,8 +13,6 @@ Run in a screen session in bash:
 
     wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.tar.xz
     tar -xf linux-4.9.tar.xz
-
-    cd linux-4.9
     patch -p0 < ~/kernel-uninitialized-memory-checker/linux-4.9.patch
 
     make mrproper allyesconfig
