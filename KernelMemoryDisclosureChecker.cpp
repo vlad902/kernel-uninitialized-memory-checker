@@ -402,59 +402,6 @@ size_t KernelMemoryDisclosureChecker::isRegionPadded(
   return maxPadding;
 }
 
-#if 0
-// Loop through every field in the declaration for the type of the region
-// looking for gaps between the end of one variable and the start of the next.
-size_t KernelMemoryDisclosureChecker::isRegionPadded(
-    ASTContext &Ctx, const RecordType *RT, const RecordDecl *RD) const {
-  size_t Padding = 0;
-
-  const ASTRecordLayout &RL = Ctx.getASTRecordLayout(RD);
-  size_t LastOffset = 0;
-  for (const FieldDecl *FD : RD->fields()) {
-    size_t FieldOffset =
-        Ctx.toCharUnitsFromBits(RL.getFieldOffset(FD->getFieldIndex()))
-            .getQuantity();
-    // Do > instead of != here to account for weird math that comes about
-    // when dealing with bitfields
-    if (FieldOffset > LastOffset)
-      Padding = MAX(Padding, FieldOffset - LastOffset);
-
-    size_t FieldSize = Ctx.getTypeSizeInChars(FD->getType()).getQuantity();
-    LastOffset = FieldOffset + FieldSize;
-  }
-
-  // Ensure there's no padding at the end
-  size_t TotalSize = Ctx.getTypeSizeInChars(RT).getQuantity();
-  if (TotalSize > LastOffset)
-    Padding = MAX(Padding, TotalSize - LastOffset);
-
-#ifdef DEBUG_PRINT
-  if (Padding) {
-    printf("-- Type %s has padding (max %zu), sizeof = %zu\n",
-           RT->desugar().getAsString().c_str(), Padding, TotalSize);
-    fflush(stdout);
-    RD->dump();
-
-    for (const FieldDecl *FD : RD->fields()) {
-      size_t FieldOffset =
-          Ctx.toCharUnitsFromBits(RL.getFieldOffset(FD->getFieldIndex()))
-              .getQuantity();
-      size_t FieldSize = Ctx.getTypeSizeInChars(FD->getType()).getQuantity();
-      printf("- type: %s / name: %s / size: %zd / offset: %zu\n",
-             FD->getType().getAsString().c_str(), FD->getNameAsString().c_str(),
-             FieldSize, FieldOffset);
-    }
-
-    printf("\n");
-    fflush(stdout);
-  }
-#endif
-
-  return Padding;
-}
-#endif
-
 // Check if the memory region to be copied out has been sanitized, or is a
 // sub-region of a sanitized region. Global variables are considered to always
 // be sanitized.
