@@ -105,26 +105,26 @@ static inline const char *KindToStr(SVal::BaseKind K, unsigned subKind) {
 
 static inline const char *KindToStr(ProgramPoint::Kind K) {
   switch(K) {
-		case ProgramPoint::BlockEdgeKind: return "BlockEdgeKind";
-		case ProgramPoint::BlockEntranceKind: return "BlockEntranceKind";
-		case ProgramPoint::BlockExitKind: return "BlockExitKind";
-		case ProgramPoint::PreStmtKind: return "PreStmtKind";
-		case ProgramPoint::PreStmtPurgeDeadSymbolsKind: return "PreStmtPurgeDeadSymbolsKind";
-		case ProgramPoint::PostStmtPurgeDeadSymbolsKind: return "PostStmtPurgeDeadSymbolsKind";
-		case ProgramPoint::PostStmtKind: return "PostStmtKind";
-		case ProgramPoint::PreLoadKind: return "PreLoadKind";
-		case ProgramPoint::PostLoadKind: return "PostLoadKind";
-		case ProgramPoint::PreStoreKind: return "PreStoreKind";
-		case ProgramPoint::PostStoreKind: return "PostStoreKind";
-		case ProgramPoint::PostConditionKind: return "PostConditionKind";
-		case ProgramPoint::PostLValueKind: return "PostLValueKind";
-		case ProgramPoint::PostInitializerKind: return "PostInitializerKind";
-		case ProgramPoint::CallEnterKind: return "CallEnterKind";
-		case ProgramPoint::CallExitBeginKind: return "CallExitBeginKind";
-		case ProgramPoint::CallExitEndKind: return "CallExitEndKind";
-		case ProgramPoint::PreImplicitCallKind: return "PreImplicitCallKind";
-		case ProgramPoint::PostImplicitCallKind: return "PostImplicitCallKind";
-		case ProgramPoint::EpsilonKind: return "EpsilonKind";
+    case ProgramPoint::BlockEdgeKind: return "BlockEdgeKind";
+    case ProgramPoint::BlockEntranceKind: return "BlockEntranceKind";
+    case ProgramPoint::BlockExitKind: return "BlockExitKind";
+    case ProgramPoint::PreStmtKind: return "PreStmtKind";
+    case ProgramPoint::PreStmtPurgeDeadSymbolsKind: return "PreStmtPurgeDeadSymbolsKind";
+    case ProgramPoint::PostStmtPurgeDeadSymbolsKind: return "PostStmtPurgeDeadSymbolsKind";
+    case ProgramPoint::PostStmtKind: return "PostStmtKind";
+    case ProgramPoint::PreLoadKind: return "PreLoadKind";
+    case ProgramPoint::PostLoadKind: return "PostLoadKind";
+    case ProgramPoint::PreStoreKind: return "PreStoreKind";
+    case ProgramPoint::PostStoreKind: return "PostStoreKind";
+    case ProgramPoint::PostConditionKind: return "PostConditionKind";
+    case ProgramPoint::PostLValueKind: return "PostLValueKind";
+    case ProgramPoint::PostInitializerKind: return "PostInitializerKind";
+    case ProgramPoint::CallEnterKind: return "CallEnterKind";
+    case ProgramPoint::CallExitBeginKind: return "CallExitBeginKind";
+    case ProgramPoint::CallExitEndKind: return "CallExitEndKind";
+    case ProgramPoint::PreImplicitCallKind: return "PreImplicitCallKind";
+    case ProgramPoint::PostImplicitCallKind: return "PostImplicitCallKind";
+    case ProgramPoint::EpsilonKind: return "EpsilonKind";
   }
 
   return "Not found?!";
