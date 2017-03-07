@@ -23,63 +23,111 @@ diff -ur llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Checkers/CMakeLists.
    MacOSKeychainAPIChecker.cpp
    MacOSXAPIChecker.cpp
    MallocChecker.cpp
+diff -ur llvm-3.9.1-original/tools/clang/lib/Rewrite/HTMLRewrite.cpp llvm/tools/clang/lib/Rewrite/HTMLRewrite.cpp
+--- llvm-3.9.1-original/tools/clang/lib/Rewrite/HTMLRewrite.cpp 2016-02-09 10:52:09.000000000 -0800
++++ llvm/tools/clang/lib/Rewrite/HTMLRewrite.cpp        2017-03-06 22:10:22.000000000 -0800
+@@ -289,6 +289,11 @@
+       " body { color:#000000; background-color:#ffffff }\n"
+       " body { font-family:Helvetica, sans-serif; font-size:10pt }\n"
+       " h1 { font-size:14pt }\n"
++      " .FileName { margin-top: 5px; margin-bottom: 5px; display: inline; }\n"
++      " .FileNav { margin-left: 5px; margin-right: 5px; display: inline; }\n"
++      " .FileNav a { text-decoration:none; font-size: larger; }\n"
++      " .divider { margin-top: 30px; margin-bottom: 30px; height: 15px; }\n"
++      " .divider { background-color: gray; }\n"
+       " .code { border-collapse:collapse; width:100%; }\n"
+       " .code { font-family: \"Monospace\", monospace; font-size:10pt }\n"
+       " .code { line-height: 1.2em }\n"
 diff -ur llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics.cpp llvm/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics.cpp
---- llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics.cpp	2016-02-13 08:42:54.000000000 -0500
-+++ llvm/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics.cpp	2017-02-27 07:59:11.000000000 -0500
-@@ -11,6 +11,7 @@
- //
- //===----------------------------------------------------------------------===//
- 
-+#include "llvm/ADT/SmallSet.h"
- #include "clang/AST/ASTContext.h"
- #include "clang/AST/Decl.h"
- #include "clang/Basic/FileManager.h"
-@@ -56,6 +57,10 @@
+--- llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics.cpp	2016-02-13 05:42:54.000000000 -0800
++++ llvm/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics.cpp	2017-03-06 22:08:03.000000000 -0800
+@@ -44,8 +44,12 @@
+   bool createdDir, noDir;
+   const Preprocessor &PP;
+   AnalyzerOptions &AnalyzerOpts;
++  const bool SupportsCrossFileDiagnostics;
+ public:
+-  HTMLDiagnostics(AnalyzerOptions &AnalyzerOpts, const std::string& prefix, const Preprocessor &pp);
++  HTMLDiagnostics(AnalyzerOptions &AnalyzerOpts,
++                  const std::string& prefix,
++                  const Preprocessor &pp,
++                  bool supportsMultipleFiles);
+
+   ~HTMLDiagnostics() override { FlushDiagnostics(nullptr); }
+
+@@ -56,6 +60,10 @@
      return "HTMLDiagnostics";
    }
- 
+
 +  bool supportsCrossFileDiagnostics() const override {
-+    return true;
++    return SupportsCrossFileDiagnostics;
 +  }
 +
    unsigned ProcessMacroPiece(raw_ostream &os,
                               const PathDiagnosticMacroPiece& P,
                               unsigned num);
-@@ -69,6 +74,11 @@
- 
+@@ -69,21 +77,35 @@
+
    void ReportDiag(const PathDiagnostic& D,
                    FilesMade *filesMade);
 +
-+  // Generate the output for the file represented by FID. path might include nodes outside of that file
-+  void GenerateFile(const PathDiagnostic& D, Rewriter &R, const SourceManager& SMgr, const PathPieces& path, FileID FID);
++  // Rewrite the file specified by FID with HTML formatting.
++  void RewriteFile(Rewriter &R, const SourceManager& SMgr,
++                   const PathPieces& path, FileID FID);
 +
-+  void GenerateHTMLHeader(const PathDiagnostic& D, Rewriter &R, const FileEntry* Entry, const SourceManager& SMgr, const PathPieces& path, FileID FID, const char *declName);
++  // Add HTML header/footers to file specified by FID
++  void FinalizeHTML(const PathDiagnostic& D, Rewriter &R,
++                    const SourceManager& SMgr, const PathPieces& path,
++                    FileID FID, const FileEntry *Entry, const char *declName);
  };
- 
+
  } // end anonymous namespace
-@@ -115,34 +125,26 @@
-     }
-   }
- 
-+  //printf("Line %i\n", __LINE__); fflush(stdout);
-   if (noDir)
-     return;
- 
+
+ HTMLDiagnostics::HTMLDiagnostics(AnalyzerOptions &AnalyzerOpts,
+                                  const std::string& prefix,
+-                                 const Preprocessor &pp)
+-    : Directory(prefix), createdDir(false), noDir(false), PP(pp), AnalyzerOpts(AnalyzerOpts) {
+-}
++                                 const Preprocessor &pp,
++                                 bool supportsMultipleFiles)
++    : Directory(prefix),
++      createdDir(false),
++      noDir(false),
++      PP(pp),
++      AnalyzerOpts(AnalyzerOpts),
++      SupportsCrossFileDiagnostics(supportsMultipleFiles) {}
+
+ void ento::createHTMLDiagnosticConsumer(AnalyzerOptions &AnalyzerOpts,
+                                         PathDiagnosticConsumers &C,
+                                         const std::string& prefix,
+                                         const Preprocessor &PP) {
+-  C.push_back(new HTMLDiagnostics(AnalyzerOpts, prefix, PP));
++  C.push_back(new HTMLDiagnostics(AnalyzerOpts, prefix, PP, true));
+ }
+
+ //===----------------------------------------------------------------------===//
+@@ -121,24 +143,24 @@
    // First flatten out the entire path to make it easier to use.
    PathPieces path = D.path.flatten(/*ShouldFlattenMacros=*/false);
- 
+
 -  // The path as already been prechecked that all parts of the path are
 -  // from the same file and that it is non-empty.
 -  const SourceManager &SMgr = path.front()->getLocation().getManager();
--  assert(!path.empty());
++  // The path as already been prechecked that the path is non-empty.
+   assert(!path.empty());
 -  FileID FID =
 -    path.front()->getLocation().asLocation().getExpansionLoc().getFileID();
 -  assert(FID.isValid());
--
--  // Create a new rewriter to generate HTML.
--  Rewriter R(const_cast<SourceManager&>(SMgr), PP.getLangOpts());
-+  //printf("Line %i\n", __LINE__); fflush(stdout);
- 
++  const SourceManager &SMgr = path.front()->getLocation().getManager();
+
+   // Create a new rewriter to generate HTML.
+   Rewriter R(const_cast<SourceManager&>(SMgr), PP.getLangOpts());
+
++  // The file for the first path element is considered the main report file, it
++  // will usually be equivalent to SMgr.getMainFileID(); however, it might be a
++  // header when -analyzer-opt-analyze-headers is used.
++  FileID ReportFile = path.front()->getLocation().asLocation().getExpansionLoc().getFileID();
++
    // Get the function/method name
    SmallString<128> declName("unknown");
    int offsetDecl = 0;
@@ -88,92 +136,100 @@ diff -ur llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics
 +      if (const NamedDecl *ND = dyn_cast<NamedDecl>(DeclWithIssue))
            declName = ND->getDeclName().getAsString();
 -      }
- 
+
        if (const Stmt *Body = DeclWithIssue->getBody()) {
            // Retrieve the relative position of the declaration which will be used
-           // for the file name
-+          const SourceManager &SMgr = path.back()->getLocation().getManager();
-           FullSourceLoc L(
-               SMgr.getExpansionLoc(path.back()->getLocation().asLocation()),
-               SMgr);
-@@ -151,32 +153,118 @@
+@@ -151,32 +173,133 @@
        }
    }
- 
+
 -  // Process the path.
 -  unsigned n = path.size();
 -  unsigned max = n;
-+  const SourceManager &SMgr = path.front()->getLocation().getManager();
-+  Rewriter R(const_cast<SourceManager&>(SMgr), PP.getLangOpts());
- 
++  // Rewrite source files as HTML for every new file the path crosses
++  std::vector<FileID> FileIDs;
++  for (auto I = path.begin(), E = path.end(); I != E; ++I) {
++    FileID FID = (*I)->getLocation().asLocation().getExpansionLoc().getFileID();
++    if (std::find(FileIDs.begin(), FileIDs.end(), FID) != FileIDs.end())
++      continue;
+
 -  for (PathPieces::const_reverse_iterator I = path.rbegin(),
 -       E = path.rend();
 -        I != E; ++I, --n)
 -    HandlePiece(R, FID, **I, n, max);
-+  // Generate HTML files for every new file the path crosses
-+  std::vector<FileID> FileIDs;
-+  for (auto I = path.rbegin(), E = path.rend(); I != E; ++I) {
-+    FileID FID = (*I)->getLocation().asLocation().getExpansionLoc().getFileID();
-+    if (std::find(FileIDs.begin(), FileIDs.end(), FID) != FileIDs.end())
-+      continue;
- 
--  // Add line numbers, header, footer, etc.
 +    FileIDs.push_back(FID);
-+    GenerateFile(D, R, SMgr, path, FID);
++    RewriteFile(R, SMgr, path, FID);
 +  }
- 
--  // unsigned FID = R.getSourceMgr().getMainFileID();
--  html::EscapeText(R, FID);
--  html::AddLineNumbers(R, FID);
-+  if (FileIDs.size() > 1) {
-+    // If there's more that one file in this report, prefix file names to every file
-+    for (std::vector<FileID>::iterator I = FileIDs.begin(), E = FileIDs.end(); I != E; I++) {
+
+-  // Add line numbers, header, footer, etc.
++  if (SupportsCrossFileDiagnostics && FileIDs.size() > 1) {
++    // Prefix file names to every file if this is a multi-file report
++    for (auto I = FileIDs.begin(), E = FileIDs.end(); I != E; I++) {
 +      SourceLocation StartLoc = SMgr.getLocForStartOfFile(*I);
 +      const FileEntry* Entry = SMgr.getFileEntryForID(*I);
 +
 +      std::string s;
 +      llvm::raw_string_ostream os(s);
-+      // TODO: Better styling
-+      os << "<h4>" << Entry->getName() << "</h4>";
-+      R.InsertTextBefore(StartLoc, os.str());
-+    }
- 
++      os << "<div id=File" << I->getHashValue() << ">\n";
++
++      if (I != FileIDs.begin()) {
++        os << "<div class=FileNav><a href=\"#File" << (I - 1)->getHashValue()
++           << "\">&#x2190;</a></div>";
++      }
+
+-  // unsigned FID = R.getSourceMgr().getMainFileID();
+-  html::EscapeText(R, FID);
+-  html::AddLineNumbers(R, FID);
++      os << "<h4 class=FileName>" << Entry->getName() << "</h4>\n";
+
 -  // If we have a preprocessor, relex the file and syntax highlight.
 -  // We might not have a preprocessor if we come from a deserialized AST file,
 -  // for example.
-+    // Then append all the file code tables together at the end of the main file
-+    for (std::vector<FileID>::iterator I = FileIDs.begin() + 1, E = FileIDs.end(); I != E; I++) {
++      if (I + 1 != E) {
++        os << "<div class=FileNav><a href=\"#File" << (I + 1)->getHashValue()
++           << "\">&#x2192;</a></div>";
++      }
+
+-  html::SyntaxHighlight(R, FID, PP);
+-  html::HighlightMacros(R, FID, PP);
++      os << "</div>\n";
++      R.InsertTextBefore(StartLoc, os.str());
++    }
++
++    // Then concatenate the HTML for all files in this path to the end of the
++    // ReportFile HTML in order of which they appear in the path.
++    for (auto I = FileIDs.begin(), E = FileIDs.end(); I != E; I++) {
++      if (*I == ReportFile)
++        continue;
++
 +      const RewriteBuffer *Buf = R.getRewriteBufferFor(*I);
 +
 +      std::string file;
 +      llvm::raw_string_ostream o(file);
++      o << "<hr class=divider>\n";
 +      for (RewriteBuffer::iterator BI = Buf->begin(), BE = Buf->end(); BI!=BE; ++BI)
 +        o << *BI;
- 
--  html::SyntaxHighlight(R, FID, PP);
--  html::HighlightMacros(R, FID, PP);
-+      SourceLocation MainFileEndLoc = SMgr.getLocForEndOfFile(SMgr.getMainFileID());
++
++      SourceLocation MainFileEndLoc = SMgr.getLocForEndOfFile(ReportFile);
 +      R.InsertTextAfter(MainFileEndLoc, o.str());
 +    }
 +  }
 +
 +  // Get the rewrite buffer.
-+  const RewriteBuffer *Buf = R.getRewriteBufferFor(SMgr.getMainFileID());
-+
++  const RewriteBuffer *Buf = R.getRewriteBufferFor(ReportFile);
 +  if (!Buf) {
 +    llvm::errs() << "warning: no diagnostics generated for main file.\n";
 +    return;
 +  }
 +
 +  // Add CSS, header, and footer.
-+  const FileEntry* Entry = SMgr.getFileEntryForID(SMgr.getMainFileID());
-+  GenerateHTMLHeader(D, R, Entry, SMgr, path, SMgr.getMainFileID(), declName.c_str());
++  const FileEntry* Entry = SMgr.getFileEntryForID(ReportFile);
++  FinalizeHTML(D, R, SMgr, path, ReportFile, Entry, declName.c_str());
 +
 +  // Create a path for the target HTML file.
 +  int FD;
 +  SmallString<128> Model, ResultPath;
 +
-+  //printf("Line %i\n", __LINE__); fflush(stdout);
 +  if (!AnalyzerOpts.shouldWriteStableReportFilename()) {
 +      llvm::sys::path::append(Model, Directory, "report-%%%%%%.html");
 +      if (std::error_code EC =
@@ -188,8 +244,7 @@ diff -ur llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics
 +                       << "': " << EC.message() << '\n';
 +          return;
 +      }
- 
--  // Get the full directory name of the analyzed file.
++
 +  } else {
 +      int i = 1;
 +      std::error_code EC;
@@ -216,32 +271,35 @@ diff -ur llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics
 +          i++;
 +      } while (EC);
 +  }
- 
--  const FileEntry* Entry = SMgr.getFileEntryForID(FID);
+
+-  // Get the full directory name of the analyzed file.
 +  llvm::raw_fd_ostream os(FD, true);
- 
+
+-  const FileEntry* Entry = SMgr.getFileEntryForID(FID);
 +  if (filesMade)
 +    filesMade->addDiagnostic(D, getName(),
 +                             llvm::sys::path::filename(ResultPath));
-+
+
 +  // Emit the HTML to disk.
 +  for (RewriteBuffer::iterator I = Buf->begin(), E = Buf->end(); I!=E; ++I)
 +      os << *I;
 +}
 +
-+void HTMLDiagnostics::GenerateHTMLHeader(const PathDiagnostic& D, Rewriter &R, const FileEntry* Entry, const SourceManager& SMgr, const PathPieces& path, FileID FID, const char *declName) {
++void HTMLDiagnostics::FinalizeHTML(const PathDiagnostic& D, Rewriter &R,
++    const SourceManager& SMgr, const PathPieces& path, FileID FID,
++    const FileEntry *Entry, const char *declName) {
    // This is a cludge; basically we want to append either the full
    // working directory if we have no directory information.  This is
    // a work in progress.
-@@ -192,24 +280,40 @@
+@@ -192,24 +315,22 @@
    int ColumnNumber = path.back()->getLocation().asLocation().getExpansionColumnNumber();
- 
+
    // Add the name of the file as an <h1> tag.
 -
    {
      std::string s;
      llvm::raw_string_ostream os(s);
- 
+
      os << "<!-- REPORTHEADER -->\n"
 -      << "<h3>Bug Summary</h3>\n<table class=\"simpletable\">\n"
 +       << "<h3>Bug Summary</h3>\n<table class=\"simpletable\">\n"
@@ -265,81 +323,36 @@ diff -ur llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics
 +       << ColumnNumber
 +       << "</a><br />"
 +       << D.getVerboseDescription() << "</td></tr>\n";
-+
-+#if 0
-+    // The navigation across the extra notes pieces.
-+    unsigned NumExtraPieces = 0;
-+    for (const auto &Piece : path) {
-+      if (const auto *P = dyn_cast<PathDiagnosticNotePiece>(Piece.get())) {
-+        int LineNumber =
-+            P->getLocation().asLocation().getExpansionLineNumber();
-+        int ColumnNumber =
-+            P->getLocation().asLocation().getExpansionColumnNumber();
-+        os << "<tr><td class=\"rowname\">Note:</td><td>"
-+           << "<a href=\"#Note" << NumExtraPieces << "\">line "
-+           << LineNumber << ", column " << ColumnNumber << "</a><br />"
-+           << P->getString() << "</td></tr>";
-+        ++NumExtraPieces;
-+      }
-+    }
-+#endif
- 
+
      // Output any other meta data.
- 
-@@ -221,6 +325,7 @@
-     os << "</table>\n<!-- REPORTSUMMARYEXTRA -->\n"
-           "<h3>Annotated Source Code</h3>\n";
- 
-+    // Insert the text
+
+@@ -275,73 +396,32 @@
      R.InsertTextBefore(SMgr.getLocForStartOfFile(FID), os.str());
    }
- 
-@@ -275,73 +380,52 @@
-     R.InsertTextBefore(SMgr.getLocForStartOfFile(FID), os.str());
-   }
- 
+
 -  // Add CSS, header, and footer.
 -
--  html::AddHeaderFooterInternalBuiltinCSS(R, FID, Entry->getName());
-+  html::AddHeaderFooterInternalBuiltinCSS(R, SMgr.getMainFileID(), Entry->getName());
+   html::AddHeaderFooterInternalBuiltinCSS(R, FID, Entry->getName());
 +}
- 
+
 -  // Get the rewrite buffer.
 -  const RewriteBuffer *Buf = R.getRewriteBufferFor(FID);
-+void HTMLDiagnostics::GenerateFile(const PathDiagnostic& D, Rewriter &R, const SourceManager& SMgr, const PathPieces& path, FileID FID) {
-+  // Process the path.
-+  // Maintain the counts of extra note pieces separately.
-+  unsigned TotalPieces = path.size();
- 
+-
 -  if (!Buf) {
 -    llvm::errs() << "warning: no diagnostics generated for main file.\n";
 -    return;
-+  unsigned TotalRegularPieces = TotalPieces;// - TotalNotePieces;
++void HTMLDiagnostics::RewriteFile(Rewriter &R, const SourceManager& SMgr,
++    const PathPieces& path, FileID FID) {
++  // Process the path.
++  unsigned TotalPieces = path.size();
++  unsigned TotalRegularPieces = TotalPieces;
 +  unsigned NumRegularPieces = TotalRegularPieces;
-+#if 0
-+  unsigned TotalNotePieces =
-+      std::count_if(path.begin(), path.end(),
-+                    [](const std::shared_ptr<PathDiagnosticPiece> &p) {
-+                      return isa<PathDiagnosticNotePiece>(*p);
-+                    });
-+  unsigned NumNotePieces = TotalNotePieces;
-+#endif
 +
 +  for (auto I = path.rbegin(), E = path.rend(); I != E; ++I) {
-+#if 0
-+    if (isa<PathDiagnosticNotePiece>(I->get())) {
-+      // This adds diagnostic bubbles, but not navigation.
-+      // Navigation through note pieces would be added later,
-+      // as a separate pass through the piece list.
-+      HandlePiece(R, FID, **I, NumNotePieces, TotalNotePieces);
-+      --NumNotePieces;
-+    } else {
-+#endif
 +      HandlePiece(R, FID, **I, NumRegularPieces, TotalRegularPieces);
 +      --NumRegularPieces;
-+    //}
    }
- 
+
 -  // Create a path for the target HTML file.
 -  int FD;
 -  SmallString<128> Model, ResultPath;
@@ -386,32 +399,30 @@ diff -ur llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics
 -      } while (EC);
 -  }
 +  // Add line numbers, header, footer, etc.
- 
+
 -  llvm::raw_fd_ostream os(FD, true);
-+  // unsigned FID = R.getSourceMgr().getMainFileID();
 +  html::EscapeText(R, FID);
 +  html::AddLineNumbers(R, FID);
- 
+
 -  if (filesMade)
 -    filesMade->addDiagnostic(D, getName(),
 -                             llvm::sys::path::filename(ResultPath));
 +  // If we have a preprocessor, relex the file and syntax highlight.
 +  // We might not have a preprocessor if we come from a deserialized AST file,
 +  // for example.
- 
+
 -  // Emit the HTML to disk.
 -  for (RewriteBuffer::iterator I = Buf->begin(), E = Buf->end(); I!=E; ++I)
 -      os << *I;
 +  html::SyntaxHighlight(R, FID, PP);
 +  html::HighlightMacros(R, FID, PP);
  }
- 
+
  void HTMLDiagnostics::HandlePiece(Rewriter& R, FileID BugFileID,
-@@ -385,13 +469,22 @@
+@@ -385,9 +465,10 @@
    // Create the html for the message.
- 
+
    const char *Kind = nullptr;
-+  bool IsNote = false;
 +  bool SuppressIndex = (max == 1);
    switch (P.getKind()) {
    case PathDiagnosticPiece::Call:
@@ -420,65 +431,43 @@ diff -ur llvm-3.9.1-original/tools/clang/lib/StaticAnalyzer/Core/HTMLDiagnostics
    case PathDiagnosticPiece::Event:  Kind = "Event"; break;
    case PathDiagnosticPiece::ControlFlow: Kind = "Control"; break;
      // Setting Kind to "Control" is intentional.
-   case PathDiagnosticPiece::Macro: Kind = "Control"; break;
-+#if 0
-+  case PathDiagnosticPiece::Note:
-+    Kind = "Note";
-+    IsNote = true;
-+    SuppressIndex = true;
-+    break;
-+#endif
-   }
- 
-   std::string sbuf;
-@@ -399,7 +492,9 @@
- 
-   os << "\n<tr><td class=\"num\"></td><td class=\"line\"><div id=\"";
- 
--  if (num == max)
-+  if (IsNote)
-+    os << "Note" << num;
-+  else if (num == max)
-     os << "EndPath";
-   else
-     os << "Path" << num;
-@@ -461,7 +556,7 @@
- 
+@@ -461,7 +542,7 @@
+
    os << "\">";
- 
+
 -  if (max > 1) {
 +  if (!SuppressIndex) {
      os << "<table class=\"msgT\"><tr><td valign=\"top\">";
      os << "<div class=\"PathIndex";
      if (Kind) os << " PathIndex" << Kind;
-@@ -501,7 +596,7 @@
- 
+@@ -501,7 +582,7 @@
+
      os << "':\n";
- 
+
 -    if (max > 1) {
 +    if (!SuppressIndex) {
        os << "</td>";
        if (num < max) {
          os << "<td><div class=\"PathNav\"><a href=\"#";
-@@ -523,7 +618,7 @@
+@@ -523,7 +604,7 @@
    else {
      os << html::EscapeText(P.getString());
- 
+
 -    if (max > 1) {
 +    if (!SuppressIndex) {
        os << "</td>";
        if (num < max) {
          os << "<td><div class=\"PathNav\"><a href=\"#";
-@@ -575,12 +670,13 @@
+@@ -575,12 +656,13 @@
          I!=E; ++I) {
- 
+
      if (const PathDiagnosticMacroPiece *MP =
 -          dyn_cast<PathDiagnosticMacroPiece>(*I)) {
 +            dyn_cast<PathDiagnosticMacroPiece>(I->get())) {
        num = ProcessMacroPiece(os, *MP, num);
        continue;
      }
- 
+
 -    if (PathDiagnosticEventPiece *EP = dyn_cast<PathDiagnosticEventPiece>(*I)) {
 +    if (PathDiagnosticEventPiece *EP =
 +            dyn_cast<PathDiagnosticEventPiece>(I->get())) {
