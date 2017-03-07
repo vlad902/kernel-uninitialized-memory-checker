@@ -75,32 +75,69 @@ class KernelMemoryDisclosureChecker
 
   void initInternalFields(ASTContext &Ctx) const;
 
+  // Check if the union being checked has fields that are of different sizes, if
+  // there are fields of different sizes and the largest field(s) are not fully
+  // sanitized, indicate a possible memory disclosure.
   bool __hasUnevenUnionFields(CheckerContext &C, const MemRegion *MR,
                               const RecordDecl *RD) const;
+  // If MR is a union, or if a MR is a struct with an field that's a union,
+  // check it using __hasUnevenUnionFields
   bool hasUnevenUnionFields(CheckerContext &C, const MemRegion *MR,
                             const RecordDecl *RD) const;
+  // Loop through the fields in the given declaration and mark bytes that aren't
+  // padding in the 'Padding' array. This can run recursively to find padding in
+  // structs contained in structs.
   void __isRegionPadded(ASTContext &Ctx, const RecordType *RT,
                         const RecordDecl *RD, bool *Padding) const;
+  // Find padding in a type declaration and return the maximum number of bytes
+  // of contiguous padding present.
   size_t isRegionPadded(ASTContext &Ctx, const RecordType *RT,
                         const RecordDecl *RD) const;
+  // Check if the memory region to be copied out has been sanitized, or is a
+  // sub-region of a sanitized region. Global variables are considered to always
+  // be sanitized.
   bool isRegionSanitized(const MemRegion *MR, ProgramStateRef State) const;
+  // Check if the region or a sub-region are marked 'unsanitized', e.g. if it
+  // has only been partially initialized.
+  // \param entireRegionCopied: If the entire region is unsanitized then it's
+  // likely a char buffer and the copyout() size argument might be something
+  // like/ strlen(buf) where sizeof(buf) < strlen(buf) would return TrueState=1
+  // FalseState=1. Avoid a slew of false positives by only signaling a partially
+  // unsanitized condition if we're sure the entire region is copied out.
   const MemRegion *isRegionUnsanitized(const MemRegion *MR,
                                        ProgramStateRef State,
                                        bool entireRegionCopied) const;
+  // Go through the struct/union and count the number of (un)referenced fields
+  // and save the names of the unreferenced fields.
   void queryReferencedFields(CheckerContext &C, const MemRegion *MR,
                              const RecordDecl *RD, size_t *RefFields,
                              size_t *UnrefFields,
                              std::string &UnreferencedStr) const;
 
+  // Check if region MR with size Size is uninitialized. Used by handleCopyout()
+  // as well as the XNU MIG code in checkEndFunction()
   void checkIfRegionUninitialized(CheckerContext &C, const MemRegion *MR,
                                   SVal Size, SourceRange SourceRange) const;
+  // Check if the region to be copied to user space satisfies any of the memory
+  // disclosure criteria, report if it does.
   void handleCopyout(const CallEvent &Call, CheckerContext &C, int SrcArg,
                      int SizeArg) const;
+  // A memcpy()/memcpy-like function can either leave the destination region
+  // sanitized or partially unsanitized depending on whether the size argument
+  // is >= or < sizeof(region). Check which case it might be and mark the region
+  // sanitized/unsanitized depending on the result.
   void handleMemcopy(const CallEvent &Call, CheckerContext &C, int DstArg,
                      int SizeArg) const;
+  // On FreeBSD, malloc() returns a zero'ed region if the third argument (a
+  // bitfield) has the M_ZERO flag set. Mark the return value sanitized if this
+  // is the case.
   void handleMalloc(const CallEvent &Call, CheckerContext &C) const;
+  // Mark the return value of this call sanitized.
   void sanitizeRetVal(const CallEvent &Call, CheckerContext &C) const;
+  // Mark the 'Arg'th argument value of this call sanitized.
   void sanitizeArg(const CallEvent &Call, CheckerContext &C, int Arg) const;
+  // Mark the 'Arg'th argument value of this call unsanitized, e.g. only
+  // partially initialized.
   void unsanitizeArg(const CallEvent &Call, CheckerContext &C, int Arg) const;
 
   // Bug visitor that prints additional information for 'partially sanitized'
@@ -114,6 +151,8 @@ class KernelMemoryDisclosureChecker
     UnsanitizedBugVisitor(const MemRegion *MR) : MR(MR) {}
     void Profile(llvm::FoldingSetNodeID &ID) const override { ID.Add(MR); }
 
+    // Walk backwards from the copyout() to the point where the unsanitized
+    // region was marked and indicate it in the output
     PathDiagnosticPiece *VisitNode(const ExplodedNode *N,
                                    const ExplodedNode *PrevN,
                                    BugReporterContext &BRC,
@@ -121,9 +160,17 @@ class KernelMemoryDisclosureChecker
   };
 
 public:
+  // Detect calls to copyout
   void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
+  // Detect calls to functions that taint (e.g. sanitize/unsanitize) their
+  // arguments or return values.
   void checkPostCall(const CallEvent &Call, CheckerContext &C) const;
+  // When a region is directly written to, e.g. foo.bar = baz, assume it's
+  // sanitized correctly, e.g. that baz is fully initialized
   void checkBind(SVal Loc, SVal Val, const Stmt *S, CheckerContext &C) const;
+  // When a region might change due to a direct write or having it's address
+  // passed to a function, if it's a field in a struct/union, mark those fields
+  // referenced for that variable
   ProgramStateRef
   checkRegionChanges(ProgramStateRef State, const InvalidatedSymbols *,
                      ArrayRef<const MemRegion *> ExplicitRegions,
@@ -131,7 +178,11 @@ public:
   bool wantsRegionChangeUpdate(ProgramStateRef) const { return true; }
 
 #ifdef __APPLE__
+  // If this function is a MIG function with unlimited size array OUT arguments,
+  // initialize them in MIGArraySymbols
   void checkBeginFunction(CheckerContext &C) const;
+  // If this is an XNU MIG function with an unlimited size array OUT argument,
+  // check if it might have leaked any uninitialized data.
   void checkEndFunction(CheckerContext &C) const;
 #endif
 };
@@ -226,9 +277,6 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
 #undef RESOLVE
 }
 
-// Check if the union being checked has fields that are of different sizes, if
-// there are fields of different sizes and the largest field(s) are not
-// fully sanitized, indicate a possible memory disclosure.
 bool KernelMemoryDisclosureChecker::__hasUnevenUnionFields(
     CheckerContext &C, const MemRegion *MR, const RecordDecl *RD) const {
   ASTContext &Ctx = C.getASTContext();
@@ -291,8 +339,6 @@ bool KernelMemoryDisclosureChecker::__hasUnevenUnionFields(
   return true;
 }
 
-// If MR is a union, or if a MR is a struct with an field that's a union, check
-// it using __hasUnevenUnionFields
 bool KernelMemoryDisclosureChecker::hasUnevenUnionFields(
     CheckerContext &C, const MemRegion *MR, const RecordDecl *RD) const {
   if (RD->isUnion())
@@ -323,9 +369,6 @@ bool KernelMemoryDisclosureChecker::hasUnevenUnionFields(
   return false;
 }
 
-// Loop through the fields in the given declaration and mark bytes that aren't
-// padding in the 'Padding' array. This can run recursively to find padding in
-// structs contained in structs.
 void KernelMemoryDisclosureChecker::__isRegionPadded(ASTContext &Ctx,
                                                      const RecordType *RT,
                                                      const RecordDecl *RD,
@@ -361,8 +404,6 @@ void KernelMemoryDisclosureChecker::__isRegionPadded(ASTContext &Ctx,
   }
 }
 
-// Find padding in a type declaration and return the maximum number of bytes of
-// contiguous padding present.
 size_t KernelMemoryDisclosureChecker::isRegionPadded(
     ASTContext &Ctx, const RecordType *RT, const RecordDecl *RD) const {
   size_t TotalSize = Ctx.getTypeSizeInChars(RT).getQuantity();
@@ -402,9 +443,6 @@ size_t KernelMemoryDisclosureChecker::isRegionPadded(
   return maxPadding;
 }
 
-// Check if the memory region to be copied out has been sanitized, or is a
-// sub-region of a sanitized region. Global variables are considered to always
-// be sanitized.
 bool KernelMemoryDisclosureChecker::isRegionSanitized(
     const MemRegion *MR, ProgramStateRef State) const {
   while (MR) {
@@ -433,13 +471,6 @@ bool KernelMemoryDisclosureChecker::isRegionSanitized(
   return false;
 }
 
-// Check if the region or a sub-region are marked 'unsanitized', e.g. if it
-// has only been partially initialized.
-// entireRegionCopied: If the entire region is unsanitized then it's likely a
-// char buffer and the copyout() size argument might be something like
-// strlen(buf) where sizeof(buf) < strlen(buf) would return TrueState=1
-// FalseState=1. Avoid a slew of false positives by only signaling a partially
-// unsanitized condition if we're sure the entire region is copied out.
 const MemRegion *KernelMemoryDisclosureChecker::isRegionUnsanitized(
     const MemRegion *MR, ProgramStateRef State, bool entireRegionCopied) const {
   // Is the entire region marked unsanitized?
@@ -460,8 +491,6 @@ const MemRegion *KernelMemoryDisclosureChecker::isRegionUnsanitized(
   return NULL;
 }
 
-// Go through the struct/union and count the number of (un)referenced fields and
-// save the names of the unreferenced fields.
 void KernelMemoryDisclosureChecker::queryReferencedFields(
     CheckerContext &C, const MemRegion *MR, const RecordDecl *RD,
     size_t *RefFields, size_t *UnrefFields,
@@ -510,8 +539,6 @@ void KernelMemoryDisclosureChecker::queryReferencedFields(
   }
 }
 
-// Check if region MR with size Size is uninitialized. Used by handleCopyout()
-// as well as the XNU MIG code in checkEndFunction()
 void KernelMemoryDisclosureChecker::checkIfRegionUninitialized(
     CheckerContext &C, const MemRegion *MR, SVal Size,
     SourceRange SourceRange) const {
@@ -673,8 +700,6 @@ void KernelMemoryDisclosureChecker::checkIfRegionUninitialized(
   }
 }
 
-// Check if the region to be copied to user space satisfies any of the memory
-// disclosure criteria, report if it does.
 void KernelMemoryDisclosureChecker::handleCopyout(const CallEvent &Call,
                                                   CheckerContext &C, int SrcArg,
                                                   int SizeArg) const {
@@ -689,10 +714,6 @@ void KernelMemoryDisclosureChecker::handleCopyout(const CallEvent &Call,
   checkIfRegionUninitialized(C, MR, Size, Call.getArgSourceRange(SrcArg));
 }
 
-// A memcpy()/memcpy-like function can either leave the destination region
-// sanitized or partially unsanitized depending on whether the size argument is
-// >= or < sizeof(region). Check which case it might be and mark the region
-// sanitized/unsanitized depending on the result.
 void KernelMemoryDisclosureChecker::handleMemcopy(const CallEvent &Call,
                                                   CheckerContext &C, int DstArg,
                                                   int SizeArg) const {
@@ -727,9 +748,6 @@ void KernelMemoryDisclosureChecker::handleMemcopy(const CallEvent &Call,
     C.addTransition(State);
 }
 
-// On FreeBSD, malloc() returns a zero'ed region if the third argument (a
-// bitfield) has the M_ZERO flag set. Mark the return value sanitized if this is
-// the case.
 void KernelMemoryDisclosureChecker::handleMalloc(const CallEvent &Call,
                                                  CheckerContext &C) const {
   if (Call.getNumArgs() != 3)
@@ -757,7 +775,6 @@ void KernelMemoryDisclosureChecker::handleMalloc(const CallEvent &Call,
     sanitizeRetVal(Call, C);
 }
 
-// Mark the return value of this call sanitized.
 void KernelMemoryDisclosureChecker::sanitizeRetVal(const CallEvent &Call,
                                                    CheckerContext &C) const {
   // Keep track of a SymbolRef instead of a MemRegion here because the region is
@@ -774,7 +791,6 @@ void KernelMemoryDisclosureChecker::sanitizeRetVal(const CallEvent &Call,
   C.addTransition(State);
 }
 
-// Mark the 'Arg'th argument value of this call sanitized.
 void KernelMemoryDisclosureChecker::sanitizeArg(const CallEvent &Call,
                                                 CheckerContext &C,
                                                 int Arg) const {
@@ -786,8 +802,6 @@ void KernelMemoryDisclosureChecker::sanitizeArg(const CallEvent &Call,
   C.addTransition(State);
 }
 
-// Mark the 'Arg'th argument value of this call unsanitized, e.g. only
-// partially initialized.
 void KernelMemoryDisclosureChecker::unsanitizeArg(const CallEvent &Call,
                                                   CheckerContext &C,
                                                   int Arg) const {
@@ -800,7 +814,6 @@ void KernelMemoryDisclosureChecker::unsanitizeArg(const CallEvent &Call,
   C.addTransition(State);
 }
 
-// Detect calls to copyout
 void KernelMemoryDisclosureChecker::checkPreCall(const CallEvent &Call,
                                                  CheckerContext &C) const {
   initInternalFields(C.getASTContext());
@@ -817,8 +830,6 @@ void KernelMemoryDisclosureChecker::checkPreCall(const CallEvent &Call,
     handleCopyout(Call, C, 1, 2);
 }
 
-// Detect calls to functions that taint (e.g. sanitize/unsanitize) their
-// arguments or return values.
 void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
                                                   CheckerContext &C) const {
   const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(Call.getDecl());
@@ -890,8 +901,6 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
 
 // TODO: Copy over referenced/sanitized/unsanitized flags instead of doing
 // a blanket sanitize here?
-// When a region is directly written to, e.g. foo.bar = baz, assume it's
-// sanitized correctly, e.g. that baz is fully initialized
 void KernelMemoryDisclosureChecker::checkBind(SVal Loc, SVal Val, const Stmt *S,
                                               CheckerContext &C) const {
   const MemRegion *MR = Loc.getAsRegion();
@@ -909,9 +918,6 @@ void KernelMemoryDisclosureChecker::checkBind(SVal Loc, SVal Val, const Stmt *S,
   C.addTransition(State);
 }
 
-// When a region might change due to a direct write or having it's address
-// passed to a function, if it's a field in a struct/union, mark those fields
-// referenced for that variable
 ProgramStateRef KernelMemoryDisclosureChecker::checkRegionChanges(
     ProgramStateRef State, const InvalidatedSymbols *,
     ArrayRef<const MemRegion *> ExplicitRegions, ArrayRef<const MemRegion *>,
@@ -941,8 +947,6 @@ ProgramStateRef KernelMemoryDisclosureChecker::checkRegionChanges(
 }
 
 #ifdef __APPLE__
-// If this function is a MIG function with unlimited size array OUT arguments,
-// initialize them in MIGArraySymbols
 void KernelMemoryDisclosureChecker::checkBeginFunction(
     CheckerContext &C) const {
   initInternalFields(C.getASTContext());
@@ -977,8 +981,6 @@ void KernelMemoryDisclosureChecker::checkBeginFunction(
   C.addTransition(State);
 }
 
-// If this is an XNU MIG function with an unlimited size array OUT argument,
-// check if it might have leaked any uninitialized data.
 void KernelMemoryDisclosureChecker::checkEndFunction(CheckerContext &C) const {
   const auto *LCtx = C.getLocationContext();
   const FunctionDecl *FD = dyn_cast<FunctionDecl>(LCtx->getDecl());
@@ -1022,8 +1024,6 @@ void KernelMemoryDisclosureChecker::checkEndFunction(CheckerContext &C) const {
 }
 #endif
 
-// Walk backwards from the copyout() to the point where the unsanitized region
-// was marked and indicate it in the output
 PathDiagnosticPiece *
 KernelMemoryDisclosureChecker::UnsanitizedBugVisitor::VisitNode(
     const ExplodedNode *N, const ExplodedNode *PrevN, BugReporterContext &BRC,
