@@ -234,3 +234,15 @@ static inline void debug_print(const char *func, const char *file, int line, con
   printf(" (kind %s)\n", KindToStr(PP.getKind()));
   fflush(stdout);
 }
+
+static inline void debug_print(const char *func, const char *file, int line, const char *code, const FunctionDecl *FD)
+{
+  PRINT_PREFIX(func, file, line, code)
+  printf(" = [FunctionDecl] ");
+  if (FD) {
+    printf("'%s' with %u arg(s) and return type %s\n", FD->getIdentifier()->getNameStart(), FD->getMinRequiredArguments(), FD->getReturnType().getAsString().c_str());
+  } else {
+    printf("(null)\n");
+  }
+  fflush(stdout);
+}

@@ -19,9 +19,6 @@
 // 4) Copying unions (or union fields in structs) that have fields of different
 // sizes that might have uninitialized memory
 //
-// TODO: Once FreeBSD bugs are fixed, reduce FPs by only alerting on memory
-// regions on the stack or where the analyzer 'saw' the allocation for it.
-//
 //===----------------------------------------------------------------------===//
 
 #include "ClangSACheckers.h"
@@ -64,14 +61,15 @@ class KernelMemoryDisclosureChecker
   mutable std::multimap<const IdentifierInfo *, size_t> MachInterface;
 #endif
 
+  // Set of the functions below to quickly check if it's one of interest.
   mutable llvm::SmallSet<const IdentifierInfo *, 32> FunctionWhitelist;
   mutable const IdentifierInfo *II_copyout, *II_sooptcopyout, *II_copy_to_user,
       *II___copy_to_user, *II_copyin, *II_sooptcopyin, *II_copy_from_user,
-      *II___copy_from_user, *II_memdup_user, *II_malloc, *II_kzalloc,
-      *II_kcalloc, *II_kmem_zalloc, *II___memset, *II_memset, *II_bzero,
-      *II___memzero, *II___memcpy, *II_memcpy, *II_memmove, *II_bcopy,
-      *II_strcpy, *II_strlcpy, *II_strncpy, *II_sprintf, *II_snprintf,
-      *II_vm_map_copyin;
+      *II___copy_from_user, *II_malloc, *II_kmem_alloc, *II_kmalloc,
+      *II_kmalloc_array, *II_sock_kmalloc, *II_kalloc, *II___MALLOC,
+      *II___memset, *II_memset, *II_bzero, *II___memzero, *II___memcpy,
+      *II_memcpy, *II_memmove, *II_bcopy, *II_strcpy, *II_strlcpy, *II_strncpy,
+      *II_sprintf, *II_snprintf, *II_vm_map_copyin;
 
   void initInternalFields(ASTContext &Ctx) const;
 
@@ -128,15 +126,18 @@ class KernelMemoryDisclosureChecker
   // sanitized/unsanitized depending on the result.
   void handleMemcopy(const CallEvent &Call, CheckerContext &C, int DstArg,
                      int SizeArg) const;
-  // On FreeBSD, malloc() returns a zero'ed region if the third argument (a
-  // bitfield) has the M_ZERO flag set. Mark the return value sanitized if this
-  // is the case.
-  void handleMalloc(const CallEvent &Call, CheckerContext &C) const;
-  // Mark the return value of this call sanitized.
-  void sanitizeRetVal(const CallEvent &Call, CheckerContext &C) const;
-  // Mark the 'Arg'th argument value of this call sanitized.
+  // Check if a given bit is set in a call argument. Used to check if the
+  // M_ZERO flag was set to determine if a malloc() call returned a sanitized
+  // region.
+  bool argBitSet(const CallEvent &Call, CheckerContext &C, size_t Arg,
+                 size_t Flag) const;
+  // Mark the return value of this call a malloc()ed region.
+  void mallocRetVal(const CallEvent &Call, CheckerContext &C) const;
+  // Mark the contents of a given argument of this call a malloc()ed region.
+  void mallocArg(const CallEvent &Call, CheckerContext &C, size_t Arg) const;
+  // Mark the given argument value of this call sanitized.
   void sanitizeArg(const CallEvent &Call, CheckerContext &C, int Arg) const;
-  // Mark the 'Arg'th argument value of this call unsanitized, e.g. only
+  // Mark the given argument value of this call unsanitized, e.g. only
   // partially initialized.
   void unsanitizeArg(const CallEvent &Call, CheckerContext &C, int Arg) const;
 
@@ -193,8 +194,9 @@ public:
 REGISTER_SET_WITH_PROGRAMSTATE(UnsanitizedRegions, const MemRegion *);
 // Regions that have been sanitized
 REGISTER_SET_WITH_PROGRAMSTATE(SanitizedRegions, const MemRegion *);
-// Symbols that have been sanitized
-REGISTER_SET_WITH_PROGRAMSTATE(SanitizedSymbols, SymbolRef);
+// Symbols that were dynamically allocated and not cleared (used for heuristic
+// to reject FPs on region that we didn't see allocated)
+REGISTER_SET_WITH_PROGRAMSTATE(MallocedSymbols, SymbolRef);
 // Fields that have been initialized in a given region, e.g. a write to
 // struct.f1.f2 would save pair<struct, f1> and pair<struct, f2> to note that
 // those fields have been referenced/initialized.
@@ -254,11 +256,13 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
   RESOLVE(sooptcopyin)
   RESOLVE(copy_from_user)
   RESOLVE(__copy_from_user)
-  RESOLVE(memdup_user)
   RESOLVE(malloc)
-  RESOLVE(kzalloc)
-  RESOLVE(kcalloc)
-  RESOLVE(kmem_zalloc)
+  RESOLVE(kmem_alloc)
+  RESOLVE(kmalloc)
+  RESOLVE(kmalloc_array)
+  RESOLVE(sock_kmalloc)
+  RESOLVE(kalloc)
+  RESOLVE(__MALLOC)
   RESOLVE(__memset)
   RESOLVE(memset)
   RESOLVE(bzero)
@@ -445,21 +449,21 @@ size_t KernelMemoryDisclosureChecker::isRegionPadded(
 
 bool KernelMemoryDisclosureChecker::isRegionSanitized(
     const MemRegion *MR, ProgramStateRef State) const {
+
+  // HEURISTIC: If this region is not on the stack and we did not see an
+  // explicit dynamic allocation for it, consider it sanitized (this cuts down
+  // of many FPs where we did not see the region initialized/sanitized, but
+  // cuts down some TPs too)
+  bool sanitizedStorage = !MR->hasStackNonParametersStorage();
+
   while (MR) {
     if (State->contains<SanitizedRegions>(MR) ||
         State->contains<SanitizedRegions>(MR->StripCasts()))
       return true;
 
     if (MR->getSymbolicBase() &&
-        State->contains<SanitizedSymbols>(MR->getSymbolicBase()->getSymbol()))
-      return true;
-
-    const VarRegion *VR = MR->getAs<VarRegion>();
-    if (VR) {
-      const VarDecl *VD = VR->getDecl();
-      if (VD && VD->hasGlobalStorage())
-        return true;
-    }
+        State->contains<MallocedSymbols>(MR->getSymbolicBase()->getSymbol()))
+      sanitizedStorage = false;
 
     const SubRegion *SR = MR->getAs<SubRegion>();
     if (!SR)
@@ -468,7 +472,7 @@ bool KernelMemoryDisclosureChecker::isRegionSanitized(
     MR = SR->getSuperRegion();
   }
 
-  return false;
+  return sanitizedStorage;
 }
 
 const MemRegion *KernelMemoryDisclosureChecker::isRegionUnsanitized(
@@ -557,20 +561,25 @@ void KernelMemoryDisclosureChecker::checkIfRegionUninitialized(
     if (!SymR)
       return;
 
-    const MemRegion *underlyingMR = SymR->getSymbol()->getOriginRegion();
-    if (!underlyingMR)
-      return;
+    SymbolRef Sym = SymR->getSymbol();
+    if (const SymbolConjured *SC = dyn_cast<SymbolConjured>(Sym)) {
+      RegionType = SC->getType().getTypePtrOrNull();
+    } else {
+      const MemRegion *underlyingMR = Sym->getOriginRegion();
+      if (!underlyingMR)
+        return;
 
-    const TypedRegion *underlyingTR = underlyingMR->getAs<TypedRegion>();
-    if (!underlyingTR)
-      return;
+      const TypedRegion *underlyingTR = underlyingMR->getAs<TypedRegion>();
+      if (!underlyingTR)
+        return;
 
-    const Type *underlyingType =
-        underlyingTR->getLocationType().getTypePtrOrNull();
-    if (!underlyingType || !underlyingType->isPointerType())
-      return;
+      const Type *underlyingType =
+          underlyingTR->getLocationType().getTypePtrOrNull();
+      if (!underlyingType || !underlyingType->isPointerType())
+        return;
 
-    RegionType = underlyingType->getPointeeType().getTypePtrOrNull();
+      RegionType = underlyingType->getPointeeType().getTypePtrOrNull();
+    }
   }
 
   if (!RegionType || !RegionType->isPointerType())
@@ -677,13 +686,14 @@ void KernelMemoryDisclosureChecker::checkIfRegionUninitialized(
   std::string Unreferenced;
   queryReferencedFields(C, MR, RD, &RefCount, &UnrefCount, Unreferenced);
 
-  // Check if every field in the struct has been referenced. Only warn on
-  // unreferenced fields if some fields HAVE been referenced (e.g. ignore the
-  // case where no fields of a struct have been written to at all since this is
-  // likely a false positive due to the inability to inline a function.)
-  // TODO: Alert on UnrefCount && MR in StackLocalSpaceRegion and no refs to
-  // MR to non-inlined function args? checkPointerEscape??
-  if (RefCount && UnrefCount) {
+  // Heuristic: Check if every struct field has been referenced. Only warn on
+  // unreferenced fields if more fields HAVE been referenced (e.g. ignore the
+  // case where no fields of a struct have been written to at all, or the vast
+  // majority have not been since these are likely false positives due to the
+  // inability to inline a function.)
+  // TODO: Alert even if there are no referenced regions if it never pointer
+  // escaped instead of this hacky heuristic
+  if (UnrefCount && RefCount >= UnrefCount) {
     SmallString<256> buf;
     llvm::raw_svector_ostream os(buf);
     os << "Copies out a struct with untouched element(s): " << Unreferenced;
@@ -748,46 +758,54 @@ void KernelMemoryDisclosureChecker::handleMemcopy(const CallEvent &Call,
     C.addTransition(State);
 }
 
-void KernelMemoryDisclosureChecker::handleMalloc(const CallEvent &Call,
-                                                 CheckerContext &C) const {
-  if (Call.getNumArgs() != 3)
-    return;
-
-  const int M_ZERO = 0x0100;
+bool KernelMemoryDisclosureChecker::argBitSet(const CallEvent &Call,
+                                              CheckerContext &C, size_t Arg,
+                                              size_t Flag) const {
+  if (Call.getNumArgs() <= Arg)
+    return false;
 
   ProgramStateRef State = C.getState();
-  QualType flags_type = Call.getArgExpr(2)->getType();
-  NonLoc flags = Call.getArgSVal(2).castAs<NonLoc>();
+  QualType flags_type = Call.getArgExpr(Arg)->getType();
+  NonLoc flags = Call.getArgSVal(Arg).castAs<NonLoc>();
   NonLoc zero_flag =
-      C.getSValBuilder().makeIntVal(M_ZERO, flags_type).castAs<NonLoc>();
+      C.getSValBuilder().makeIntVal(Flag, flags_type).castAs<NonLoc>();
   SVal MaskedFlagsUC = C.getSValBuilder().evalBinOpNN(State, BO_And, flags,
                                                       zero_flag, flags_type);
 
   if (MaskedFlagsUC.isUnknownOrUndef())
-    return;
+    return false;
   DefinedSVal MaskedFlags = MaskedFlagsUC.castAs<DefinedSVal>();
 
   // Check if maskedFlags is non-zero.
   ProgramStateRef TrueState, FalseState;
   std::tie(TrueState, FalseState) = State->assume(MaskedFlags);
-
-  if (TrueState && !FalseState)
-    sanitizeRetVal(Call, C);
+  return TrueState && !FalseState;
 }
 
-void KernelMemoryDisclosureChecker::sanitizeRetVal(const CallEvent &Call,
-                                                   CheckerContext &C) const {
-  // Keep track of a SymbolRef instead of a MemRegion here because the region is
-  // a SymbolicRegion and the address can change underneath us, e.g. if
-  // MallocChecker runs after us it will modify the SVal/MemRegion returned by
-  // malloc and hence future checks would fail, but the symbol stays the same so
-  // we use that.
+void KernelMemoryDisclosureChecker::mallocRetVal(const CallEvent &Call,
+                                                 CheckerContext &C) const {
   SymbolRef Sym = Call.getReturnValue().getAsLocSymbol();
   if (!Sym)
     return;
 
   ProgramStateRef State = C.getState();
-  State = State->add<SanitizedSymbols>(Sym);
+  State = State->add<MallocedSymbols>(Sym);
+  C.addTransition(State);
+}
+
+void KernelMemoryDisclosureChecker::mallocArg(const CallEvent &Call,
+                                              CheckerContext &C,
+                                              size_t Arg) const {
+  Optional<Loc> ArgLoc = Call.getArgSVal(Arg).getAs<Loc>();
+  if (!ArgLoc)
+    return;
+
+  ProgramStateRef State = C.getState();
+  SymbolRef Sym = State->getSVal(*ArgLoc).getAsLocSymbol();
+  if (!Sym)
+    return;
+
+  State = State->add<MallocedSymbols>(Sym);
   C.addTransition(State);
 }
 
@@ -855,45 +873,50 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
   printf("\n");
 #endif
 
-  if (!FunctionWhitelist.count(FD->getIdentifier()))
+  const IdentifierInfo *Callee = FD->getIdentifier();
+  if (!FunctionWhitelist.count(Callee))
     return;
-  else if (FD->getIdentifier() == II_memset ||
-           FD->getIdentifier() == II___memset ||
-           FD->getIdentifier() == II_bzero ||
-           FD->getIdentifier() == II___memzero ||
-           FD->getIdentifier() == II_copy_from_user ||
-           FD->getIdentifier() == II___copy_from_user)
+  else if (Callee == II_memset || Callee == II___memset || Callee == II_bzero ||
+           Callee == II___memzero || Callee == II_copy_from_user ||
+           Callee == II___copy_from_user)
     sanitizeArg(Call, C, 0);
-  else if (FD->getIdentifier() == II_copyin ||
-           FD->getIdentifier() == II_sooptcopyin)
+  else if (Callee == II_copyin || Callee == II_sooptcopyin)
     sanitizeArg(Call, C, 1);
-  else if (FD->getIdentifier() == II_kzalloc ||
-           FD->getIdentifier() == II_kcalloc ||
-           FD->getIdentifier() == II_kmem_zalloc ||
-           FD->getIdentifier() == II_memdup_user)
-    sanitizeRetVal(Call, C);
-  else if (FD->getIdentifier() == II_strlcpy ||
-           FD->getIdentifier() == II_strcpy ||
-           FD->getIdentifier() == II_sprintf ||
-           FD->getIdentifier() == II_snprintf)
+  else if (Callee == II_strlcpy || Callee == II_strcpy ||
+           Callee == II_sprintf || Callee == II_snprintf)
     unsanitizeArg(Call, C, 0);
-  else if (FD->getIdentifier() == II_memcpy ||
-           FD->getIdentifier() == II___memcpy ||
-           FD->getIdentifier() == II_memmove ||
-           FD->getIdentifier() == II_strncpy)
+  else if (Callee == II_memcpy || Callee == II___memcpy ||
+           Callee == II_memmove || Callee == II_strncpy)
     handleMemcopy(Call, C, 0, 2);
-  else if (FD->getIdentifier() == II_bcopy)
+  else if (Callee == II_bcopy)
     handleMemcopy(Call, C, 1, 2);
-  else if (FD->getIdentifier() == II_malloc)
-    handleMalloc(Call, C);
+  else if (Callee == II_kmalloc || Callee == II_kmalloc_array ||
+           Callee == II_sock_kmalloc || Callee == II_kmem_alloc ||
+           Callee == II_kalloc)
+    mallocRetVal(Call, C);
+  else if (Callee == II_malloc) {
+    const int FreeBSD_M_ZERO = 0x0100;
+    if (!argBitSet(Call, C, 2, FreeBSD_M_ZERO))
+      mallocRetVal(Call, C);
+  } else if (Callee == II___MALLOC) {
+    const int XNU_M_ZERO = 0x04;
+    if (!argBitSet(Call, C, 2, XNU_M_ZERO))
+      mallocArg(Call, C, 3);
+  }
 #ifdef __APPLE__
-  else if (FD->getIdentifier() == II_vm_map_copyin) {
+  else if (Callee == II_vm_map_copyin) {
     ProgramStateRef State = C.getState();
-    SVal Loc = Call.getArgSVal(4);
+    SVal L = Call.getArgSVal(4);
     SVal Val = Call.getArgSVal(1);
-    State = State->bindLoc(Loc, Val);
-    if (State->get<MIGArraySymbols>(Loc.getAsSymbol()))
-      State = State->set<MIGArraySymbols>(Loc.getAsSymbol(), Val.getAsRegion());
+    State = State->bindLoc(L, Val);
+    if (State->get<MIGArraySymbols>(L.getAsSymbol()))
+      State = State->set<MIGArraySymbols>(L.getAsSymbol(), Val.getAsRegion());
+
+    // TODO: Hack to prevent this symbol being marked sanitized in
+    // isRegionSanitized() due to heuristic
+    if (Optional<Loc> _L = L.getAs<Loc>())
+      State = State->add<MallocedSymbols>(State->getSVal(*_L).getAsSymbol());
+
     C.addTransition(State);
   }
 #endif
