@@ -873,6 +873,12 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
   printf("\n");
 #endif
 
+  // Various constants we need to check whether dynamically allocated memory is
+  // zero'ed/sanitized.
+  const int Linux_GFP_ZERO = 0x8000;
+  const int FreeBSD_M_ZERO = 0x0100;
+  const int XNU_M_ZERO = 0x04;
+
   const IdentifierInfo *Callee = FD->getIdentifier();
   if (!FunctionWhitelist.count(Callee))
     return;
@@ -890,16 +896,20 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
     handleMemcopy(Call, C, 0, 2);
   else if (Callee == II_bcopy)
     handleMemcopy(Call, C, 1, 2);
-  else if (Callee == II_kmalloc || Callee == II_kmalloc_array ||
-           Callee == II_sock_kmalloc || Callee == II_kmem_alloc ||
-           Callee == II_kalloc)
+  else if (Callee == II_kmem_alloc || Callee == II_kalloc)
     mallocRetVal(Call, C);
+  else if (Callee == II_kmalloc) {
+    if (!argBitSet(Call, C, 1, Linux_GFP_ZERO))
+      mallocRetVal(Call, C);
+  }
+  else if (Callee == II_sock_kmalloc || Callee == II_kmalloc_array) {
+    if (!argBitSet(Call, C, 2, Linux_GFP_ZERO))
+      mallocRetVal(Call, C);
+  }
   else if (Callee == II_malloc) {
-    const int FreeBSD_M_ZERO = 0x0100;
     if (!argBitSet(Call, C, 2, FreeBSD_M_ZERO))
       mallocRetVal(Call, C);
   } else if (Callee == II___MALLOC) {
-    const int XNU_M_ZERO = 0x04;
     if (!argBitSet(Call, C, 2, XNU_M_ZERO))
       mallocArg(Call, C, 3);
   }
