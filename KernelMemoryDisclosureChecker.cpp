@@ -262,6 +262,7 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
   RESOLVE(kmalloc_array)
   RESOLVE(sock_kmalloc)
   RESOLVE(kalloc)
+  // TODO: kalloc_canblock on XNU
   RESOLVE(__MALLOC)
   RESOLVE(__memset)
   RESOLVE(memset)

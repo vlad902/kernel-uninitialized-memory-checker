@@ -1,3 +1,5 @@
+This clang analyzer checkers looks for kernel-to-userland memory disclosure, it was a toy starter project described [here](https://tsyrklevich.net/2017/03/27/kernel-clang-analyzer/).
+
 # Build LLVM/clang with the checker
 
 In a screen session, run `sh build.sh`. It will place the LLVM source tree into a directory named `llvm` and place the new build against it in the directory `build`.

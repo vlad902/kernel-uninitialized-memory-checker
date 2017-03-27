@@ -26,7 +26,7 @@ using namespace ento;
 #define BLU
 #endif
 
-#define PRINT_PREFIX(func, file, line, code) printf(RED "%s" RST ":" GRN "%d" RST ":" BLU "%s()" RST " %s", file, line, func, code); fflush(stdout);
+#define PRINT_PREFIX(func, file, line, code) fprintf(stderr, RED "%s" RST ":" GRN "%d" RST ":" BLU "%s()" RST " %s", file, line, func, code); fflush(stderr);
 
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define DPRINT(arg) debug_print(__func__, __FILENAME__, __LINE__, #arg, arg)
@@ -133,77 +133,77 @@ static inline const char *KindToStr(ProgramPoint::Kind K) {
 static inline void debug_print(const char *func, const char *file, int line, const char *code, const char *str)
 {
   PRINT_PREFIX(func, file, line, str)
-  printf("\n");
-  fflush(stdout);
+  fprintf(stderr, "\n");
+  fflush(stderr);
 }
 
 static inline void debug_print(const char *func, const char *file, int line, const char *code, size_t sz)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = %zu\n", sz);
-  fflush(stdout);
+  fprintf(stderr, " = %zu\n", sz);
+  fflush(stderr);
 }
 
 static inline void debug_print(const char *func, const char *file, int line, const char *code, bool boolean)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = [bool] %s\n", boolean ? "true" : "false");
-  fflush(stdout);
+  fprintf(stderr, " = [bool] %s\n", boolean ? "true" : "false");
+  fflush(stderr);
 }
 
 static inline void debug_print(const char *func, const char *file, int line, const char *code, const Type *Type)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = [Type] ");
-  fflush(stdout);
+  fprintf(stderr, " = [Type] ");
+  fflush(stderr);
   if (Type)
     Type->dump();
   else
-    printf("(null)\n");
-  fflush(stdout);
+    fprintf(stderr, "(null)\n");
+  fflush(stderr);
 }
 
 static inline void debug_print(const char *func, const char *file, int line, const char *code, SymbolRef Sym)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = [SymbolRef] ");
+  fprintf(stderr, " = [SymbolRef] ");
   if (Sym) {
-    fflush(stdout);
+    fflush(stderr);
     Sym->dump();
-    printf(" (kind %s)\n", KindToStr(Sym->getKind()));
+    fprintf(stderr, " (kind %s)\n", KindToStr(Sym->getKind()));
   } else
-    printf("(null)\n");
-  fflush(stdout);
+    fprintf(stderr, "(null)\n");
+  fflush(stderr);
 }
 
 static inline void debug_print(const char *func, const char *file, int line, const char *code, const MemRegion *Reg)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = [MemRegion] ");
+  fprintf(stderr, " = [MemRegion] ");
   if (Reg)
-    printf("%s (kind %s)\n",
+    fprintf(stderr, "%s (kind %s)\n",
         Reg->getString().c_str(),
         KindToStr(Reg->getKind()));
   else
-    printf("(null)\n");
-  fflush(stdout);
+    fprintf(stderr, "(null)\n");
+  fflush(stderr);
 }
 
 static inline void debug_print(const char *func, const char *file, int line, const char *code, const SVal S)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = [SVal] ");
-  fflush(stdout);
-  S.dumpToStream(llvm::outs());
-  printf(" (kind %s)\n", KindToStr(S.getBaseKind(), S.getSubKind()));
-  fflush(stdout);
+  fprintf(stderr, " = [SVal] ");
+  fflush(stderr);
+  S.dumpToStream(llvm::errs());
+  fprintf(stderr, " (kind %s)\n", KindToStr(S.getBaseKind(), S.getSubKind()));
+  fflush(stderr);
 }
 
 static inline void debug_print(const char *func, const char *file, int line, const char *code, const QualType QT)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = [QualType] ");
-  fflush(stdout);
+  fprintf(stderr, " = [QualType] ");
+  fflush(stderr);
   // TODO: Short version and then dump on the next line
   QT->dump();
 }
@@ -211,38 +211,38 @@ static inline void debug_print(const char *func, const char *file, int line, con
 static inline void debug_print(const char *func, const char *file, int line, const char *code, const Stmt *S)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = [Stmt]");
+  fprintf(stderr, " = [Stmt]");
   if (S) {
-    printf(":\n");
-    fflush(stdout);
+    fprintf(stderr, ":\n");
+    fflush(stderr);
     S->dumpColor();
   } else {
-    printf(" (null)");
+    fprintf(stderr, " (null)");
   }
-  printf("\n");
-  fflush(stdout);
+  fprintf(stderr, "\n");
+  fflush(stderr);
 }
 
 static inline void debug_print(const char *func, const char *file, int line, const char *code, const ProgramPoint PP)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = [ProgramPoint] ");
+  fprintf(stderr, " = [ProgramPoint] ");
   if (PP.getTag())
-    printf("%s", PP.getTag()->getTagDescription().str().c_str());
+    fprintf(stderr, "%s", PP.getTag()->getTagDescription().str().c_str());
   else
-    printf("(no tag)");
-  printf(" (kind %s)\n", KindToStr(PP.getKind()));
-  fflush(stdout);
+    fprintf(stderr, "(no tag)");
+  fprintf(stderr, " (kind %s)\n", KindToStr(PP.getKind()));
+  fflush(stderr);
 }
 
 static inline void debug_print(const char *func, const char *file, int line, const char *code, const FunctionDecl *FD)
 {
   PRINT_PREFIX(func, file, line, code)
-  printf(" = [FunctionDecl] ");
+  fprintf(stderr, " = [FunctionDecl] ");
   if (FD) {
-    printf("'%s' with %u arg(s) and return type %s\n", FD->getIdentifier()->getNameStart(), FD->getMinRequiredArguments(), FD->getReturnType().getAsString().c_str());
+    fprintf(stderr, "'%s' with %u arg(s) and return type %s\n", FD->getIdentifier()->getNameStart(), FD->getMinRequiredArguments(), FD->getReturnType().getAsString().c_str());
   } else {
-    printf("(null)\n");
+    fprintf(stderr, "(null)\n");
   }
-  fflush(stdout);
+  fflush(stderr);
 }
