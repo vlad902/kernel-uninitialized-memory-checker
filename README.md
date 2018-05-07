@@ -4,6 +4,8 @@ This clang analyzer checkers looks for kernel-to-userland memory disclosure, it 
 
 In a screen session, run `sh build.sh`. It will place the LLVM source tree into a directory named `llvm` and place the new build against it in the directory `build`.
 
+To run tests, run `~/build/bin/llvm-lit llvm/tools/clang/test/Analysis/kernel-memory-disclosure-checker-tests/*.c`
+
 # Run against FreeBSD kernel
 
 Run in a screen session in bash:
