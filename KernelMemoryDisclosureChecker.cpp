@@ -17,7 +17,7 @@
 // e.g. if you strcpy(struct.field, "foo") the end of the field will be left
 // uninitialized if struct.field is wider than 4 bytes
 // 4) Copying unions (or union fields in structs) that have fields of different
-// sizes that might have uninitialized memory
+// sizes where space was left uninitialized.
 //
 //===----------------------------------------------------------------------===//
 
@@ -38,7 +38,6 @@
 #include "clang/StaticAnalyzer/Checkers/MachInterface.h"
 #endif
 
-#define MAX(a, b) ((a) >= (b) ? (a) : (b))
 //#define DEBUG_PRINT
 
 using namespace clang;
@@ -76,7 +75,7 @@ class KernelMemoryDisclosureChecker
   // Check if the union being checked has fields that are of different sizes, if
   // there are fields of different sizes and the largest field(s) are not fully
   // sanitized, indicate a possible memory disclosure.
-  bool __hasUnevenUnionFields(CheckerContext &C, const MemRegion *MR,
+  bool __hasUnevenUnionFields(CheckerContext &C, const SubRegion *SR,
                               const RecordDecl *RD) const;
   // If MR is a union, or if a MR is a struct with an field that's a union,
   // check it using __hasUnevenUnionFields
@@ -154,10 +153,10 @@ class KernelMemoryDisclosureChecker
 
     // Walk backwards from the copyout() to the point where the unsanitized
     // region was marked and indicate it in the output
-    PathDiagnosticPiece *VisitNode(const ExplodedNode *N,
-                                   const ExplodedNode *PrevN,
-                                   BugReporterContext &BRC,
-                                   BugReport &BR) override;
+    std::shared_ptr<PathDiagnosticPiece> VisitNode(const ExplodedNode *N,
+                                                   const ExplodedNode *PrevN,
+                                                   BugReporterContext &BRC,
+                                                   BugReport &BR) override;
   };
 
 public:
@@ -175,7 +174,8 @@ public:
   ProgramStateRef
   checkRegionChanges(ProgramStateRef State, const InvalidatedSymbols *,
                      ArrayRef<const MemRegion *> ExplicitRegions,
-                     ArrayRef<const MemRegion *>, const CallEvent *) const;
+                     ArrayRef<const MemRegion *>, const LocationContext *,
+                     const CallEvent *) const;
   bool wantsRegionChangeUpdate(ProgramStateRef) const { return true; }
 
 #ifdef __APPLE__
@@ -191,12 +191,12 @@ public:
 } // end anonymous namespace
 
 // Regions that have not been fully initialized
-REGISTER_SET_WITH_PROGRAMSTATE(UnsanitizedRegions, const MemRegion *);
+REGISTER_SET_WITH_PROGRAMSTATE(UnsanitizedRegions, const MemRegion *)
 // Regions that have been sanitized
-REGISTER_SET_WITH_PROGRAMSTATE(SanitizedRegions, const MemRegion *);
+REGISTER_SET_WITH_PROGRAMSTATE(SanitizedRegions, const MemRegion *)
 // Symbols that were dynamically allocated and not cleared (used for heuristic
 // to reject FPs on region that we didn't see allocated)
-REGISTER_SET_WITH_PROGRAMSTATE(MallocedSymbols, SymbolRef);
+REGISTER_SET_WITH_PROGRAMSTATE(MallocedSymbols, SymbolRef)
 // Fields that have been initialized in a given region, e.g. a write to
 // struct.f1.f2 would save pair<struct, f1> and pair<struct, f2> to note that
 // those fields have been referenced/initialized.
@@ -206,7 +206,7 @@ REGISTER_SET_WITH_PROGRAMSTATE(MallocedSymbols, SymbolRef);
 // struct_info_v1.foo and FP. This is not a frequent FP, so might not be worth
 // fixing.
 typedef std::pair<const MemRegion *, const FieldDecl *> FieldReference;
-REGISTER_SET_WITH_PROGRAMSTATE(ReferencedFields, FieldReference);
+REGISTER_SET_WITH_PROGRAMSTATE(ReferencedFields, FieldReference)
 
 #ifdef __APPLE__
 // On XNU kernels, maps unlimited size array argument symbols to the memregions
@@ -283,7 +283,7 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
 }
 
 bool KernelMemoryDisclosureChecker::__hasUnevenUnionFields(
-    CheckerContext &C, const MemRegion *MR, const RecordDecl *RD) const {
+    CheckerContext &C, const SubRegion *SR, const RecordDecl *RD) const {
   ASTContext &Ctx = C.getASTContext();
   ProgramStateRef State = C.getState();
   MemRegionManager &MRM = C.getSValBuilder().getRegionManager();
@@ -308,7 +308,7 @@ bool KernelMemoryDisclosureChecker::__hasUnevenUnionFields(
     if (CurSize != GreatestFieldSize)
       continue;
 
-    const MemRegion *UMR = MRM.getFieldRegion(FD, MR);
+    const MemRegion *UMR = MRM.getFieldRegion(FD, SR);
     if (!UMR)
       continue;
 
@@ -336,7 +336,7 @@ bool KernelMemoryDisclosureChecker::__hasUnevenUnionFields(
   }
 
 #ifdef DEBUG_PRINT
-  printf("Uneven union %p: ", (void *)MR);
+  printf("Uneven union %p: ", (const void *)SR);
   fflush(stdout);
   RD->dump();
 #endif
@@ -346,8 +346,12 @@ bool KernelMemoryDisclosureChecker::__hasUnevenUnionFields(
 
 bool KernelMemoryDisclosureChecker::hasUnevenUnionFields(
     CheckerContext &C, const MemRegion *MR, const RecordDecl *RD) const {
+  const SubRegion *SR = MR->getAs<SubRegion>();
+  if (!SR)
+    llvm::report_fatal_error("MemRegion unexpectedly not a SubRegion");
+
   if (RD->isUnion())
-    return __hasUnevenUnionFields(C, MR, RD);
+    return __hasUnevenUnionFields(C, SR, RD);
 
   MemRegionManager &MRM = C.getSValBuilder().getRegionManager();
   for (const FieldDecl *FD : RD->fields()) {
@@ -363,11 +367,15 @@ bool KernelMemoryDisclosureChecker::hasUnevenUnionFields(
     if (!URD || URD->field_empty())
       continue;
 
-    const MemRegion *UMR = MRM.getFieldRegion(FD, MR);
+    const MemRegion *UMR = MRM.getFieldRegion(FD, SR);
     if (!UMR)
       continue;
 
-    if (__hasUnevenUnionFields(C, UMR, URD))
+    const SubRegion *USR = UMR->getAs<SubRegion>();
+    if (!USR)
+      continue;
+
+    if (__hasUnevenUnionFields(C, USR, URD))
       return true;
   }
 
@@ -426,7 +434,7 @@ size_t KernelMemoryDisclosureChecker::isRegionPadded(
       curStreak = 0;
     } else {
       curStreak++;
-      maxPadding = MAX(maxPadding, curStreak);
+      maxPadding = std::max(maxPadding, curStreak);
     }
   }
 
@@ -538,7 +546,7 @@ void KernelMemoryDisclosureChecker::queryReferencedFields(
 
 #ifdef DEBUG_PRINT
     printf("- Derived: %p / FD: %p / type: %s / Ref: %zu / Unref: %zu\n",
-           (void *)DerivedRegion, (void *)FD,
+           (const void *)DerivedRegion, (const void *)FD,
            FD->getType().getAsString().c_str(), *RefFields, *UnrefFields);
 #endif
   }
@@ -863,8 +871,8 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
   for (unsigned int i = 0; i < Call.getNumArgs(); i++) {
     const MemRegion *MR = Call.getArgSVal(i).getAsRegion();
     printf("- Arg %i: MR = %p (%i), MR->StripCasts() = %p (%i)\n", i,
-           (void *)MR, MR ? MR->getKind() : 0,
-           MR ? (void *)MR->StripCasts() : NULL,
+           (const void *)MR, MR ? MR->getKind() : 0,
+           MR ? (const void *)MR->StripCasts() : NULL,
            MR ? MR->StripCasts()->getKind() : 0);
     fflush(stdout);
     Call.getArgSVal(i).dump();
@@ -902,12 +910,10 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
   else if (Callee == II_kmalloc) {
     if (!argBitSet(Call, C, 1, Linux_GFP_ZERO))
       mallocRetVal(Call, C);
-  }
-  else if (Callee == II_sock_kmalloc || Callee == II_kmalloc_array) {
+  } else if (Callee == II_sock_kmalloc || Callee == II_kmalloc_array) {
     if (!argBitSet(Call, C, 2, Linux_GFP_ZERO))
       mallocRetVal(Call, C);
-  }
-  else if (Callee == II_malloc) {
+  } else if (Callee == II_malloc) {
     if (!argBitSet(Call, C, 2, FreeBSD_M_ZERO))
       mallocRetVal(Call, C);
   } else if (Callee == II___MALLOC) {
@@ -954,8 +960,9 @@ void KernelMemoryDisclosureChecker::checkBind(SVal Loc, SVal Val, const Stmt *S,
 
 ProgramStateRef KernelMemoryDisclosureChecker::checkRegionChanges(
     ProgramStateRef State, const InvalidatedSymbols *,
-    ArrayRef<const MemRegion *> ExplicitRegions, ArrayRef<const MemRegion *>,
-    const CallEvent *) const {
+    ArrayRef<const MemRegion *> ExplicitRegions,
+    ArrayRef<const MemRegion *> Regions, const LocationContext *LCtx,
+    const CallEvent *CE) const {
   for (const MemRegion *MR : ExplicitRegions) {
     const SubRegion *SR = MR->getAs<SubRegion>();
     if (!SR)
@@ -1058,7 +1065,7 @@ void KernelMemoryDisclosureChecker::checkEndFunction(CheckerContext &C) const {
 }
 #endif
 
-PathDiagnosticPiece *
+std::shared_ptr<PathDiagnosticPiece>
 KernelMemoryDisclosureChecker::UnsanitizedBugVisitor::VisitNode(
     const ExplodedNode *N, const ExplodedNode *PrevN, BugReporterContext &BRC,
     BugReport &BR) {
@@ -1076,8 +1083,8 @@ KernelMemoryDisclosureChecker::UnsanitizedBugVisitor::VisitNode(
   if (!Location.isValid() || !Location.asLocation().isValid())
     return nullptr;
 
-  return new PathDiagnosticEventPiece(Location,
-                                      "Partial initialization occurs here");
+  return std::make_shared<PathDiagnosticEventPiece>(
+      Location, "Partial initialization occurs here");
 }
 
 void ento::registerKernelMemoryDisclosureChecker(CheckerManager &mgr) {

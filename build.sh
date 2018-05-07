@@ -18,21 +18,18 @@ else
   export CPUS=1
 fi
 
-wget http://releases.llvm.org/3.9.1/llvm-3.9.1.src.tar.xz
-wget http://releases.llvm.org/3.9.1/cfe-3.9.1.src.tar.xz
-wget http://releases.llvm.org/3.9.1/clang-tools-extra-3.9.1.src.tar.xz
+wget http://releases.llvm.org/6.0.0/llvm-6.0.0.src.tar.xz
+wget http://releases.llvm.org/6.0.0/cfe-6.0.0.src.tar.xz
 
-tar -xf llvm-3.9.1.src.tar.xz
-tar -xf cfe-3.9.1.src.tar.xz
-tar -xf clang-tools-extra-3.9.1.src.tar.xz
+tar -xf llvm-6.0.0.src.tar.xz
+tar -xf cfe-6.0.0.src.tar.xz
 
-mv llvm-3.9.1.src llvm
-mv cfe-3.9.1.src llvm/tools/clang
-mv clang-tools-extra-3.9.1.src llvm/tools/clang/tools/clang-tools-extra
+mv llvm-6.0.0.src llvm
+mv cfe-6.0.0.src llvm/tools/clang
 
-rm llvm-3.9.1.src.tar.xz cfe-3.9.1.src.tar.xz clang-tools-extra-3.9.1.src.tar.xz
+rm llvm-6.0.0.src.tar.xz cfe-6.0.0.src.tar.xz
 
-patch -p0 < $CURDIR/llvm-3.9.1.patch
+patch -p0 < $CURDIR/llvm.patch
 
 ln -s $CURDIR/KernelMemoryDisclosureChecker.cpp llvm/tools/clang/lib/StaticAnalyzer/Checkers/KernelMemoryDisclosureChecker.cpp
 ln -s $CURDIR/MachInterface.h llvm/tools/clang/include/clang/StaticAnalyzer/Checkers/MachInterface.h

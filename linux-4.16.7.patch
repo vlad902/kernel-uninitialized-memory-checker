@@ -1,0 +1,55 @@
+diff -ur linux-4.16.7-original/include/linux/compiler.h linux-4.16.7/include/linux/compiler.h
+--- linux-4.16.7-original/include/linux/compiler.h	2018-05-01 12:47:31.000000000 -0700
++++ linux-4.16.7/include/linux/compiler.h	2018-05-04 23:17:47.733974668 -0700
+@@ -41,12 +41,14 @@
+  * value is always the same.  This idea is taken from a similar patch
+  * written by Daniel Walker.
+  */
+-# ifndef likely
+-#  define likely(x)	(__branch_check__(x, 1, __builtin_constant_p(x)))
+-# endif
+-# ifndef unlikely
+-#  define unlikely(x)	(__branch_check__(x, 0, __builtin_constant_p(x)))
+-# endif
++//# ifndef likely
++//#  define likely(x)	(__branch_check__(x, 1, __builtin_constant_p(x)))
++//# endif
++//# ifndef unlikely
++//#  define unlikely(x)	(__branch_check__(x, 0, __builtin_constant_p(x)))
++//# endif
++#define likely(x) (x)
++#define unlikely(x) (x)
+ 
+ #ifdef CONFIG_PROFILE_ALL_BRANCHES
+ /*
+@@ -73,8 +75,10 @@
+ #endif /* CONFIG_PROFILE_ALL_BRANCHES */
+ 
+ #else
+-# define likely(x)	__builtin_expect(!!(x), 1)
+-# define unlikely(x)	__builtin_expect(!!(x), 0)
++//# define likely(x)	__builtin_expect(!!(x), 1)
++//# define unlikely(x)	__builtin_expect(!!(x), 0)
++#define likely(x) (x)
++#define unlikely(x) (x)
+ #endif
+ 
+ /* Optimization barrier */
+diff -ur linux-4.16.7-original/Makefile linux-4.16.7/Makefile
+--- linux-4.16.7-original/Makefile	2018-05-01 12:47:31.000000000 -0700
++++ linux-4.16.7/Makefile	2018-05-04 23:16:33.957622341 -0700
+@@ -661,10 +661,10 @@
+ KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
+ 
+ # check for 'asm goto'
+-ifeq ($(call shell-cached,$(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC) $(KBUILD_CFLAGS)), y)
+-	KBUILD_CFLAGS += -DCC_HAVE_ASM_GOTO
+-	KBUILD_AFLAGS += -DCC_HAVE_ASM_GOTO
+-endif
++#ifeq ($(call shell-cached,$(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC) $(KBUILD_CFLAGS)), y)
++#	KBUILD_CFLAGS += -DCC_HAVE_ASM_GOTO
++#	KBUILD_AFLAGS += -DCC_HAVE_ASM_GOTO
++#endif
+ 
+ include scripts/Makefile.kcov
+ include scripts/Makefile.gcc-plugins

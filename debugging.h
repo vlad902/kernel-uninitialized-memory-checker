@@ -125,6 +125,7 @@ static inline const char *KindToStr(ProgramPoint::Kind K) {
     case ProgramPoint::PreImplicitCallKind: return "PreImplicitCallKind";
     case ProgramPoint::PostImplicitCallKind: return "PostImplicitCallKind";
     case ProgramPoint::EpsilonKind: return "EpsilonKind";
+    case ProgramPoint::LoopExitKind: return "LoopExitKind";
   }
 
   return "Not found?!";

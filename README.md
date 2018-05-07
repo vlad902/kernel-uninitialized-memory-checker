@@ -13,13 +13,16 @@ Run in a screen session in bash:
 
 # Run against Linux kernel
 
-    wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.tar.xz
-    tar -xf linux-4.9.tar.xz
-    patch -p0 < ~/kernel-uninitialized-memory-checker/linux-4.9.patch
+    wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.16.7.tar.xz
+    tar -xf linux-4.16.7.tar.xz
+    patch -p0 < ~/kernel-uninitialized-memory-checker/linux-4.16.7.patch
 
     make mrproper allyesconfig
     sed -i 's/CONFIG_KASAN=y/CONFIG_KASAN=n/' .config
     sed -i 's/CONFIG_UBSAN=y/CONFIG_UBSAN=n/' .config
+    sed -i 's/CONFIG_READABLE_ASM=y/CONFIG_READABLE_ASM=n/' .config
+    sed -i 's/CONFIG_HARDENED_USERCOPY=y/CONFIG_HARDENED_USERCOPY=n/' .config
+    sed -i 's/CONFIG_FORTIFY_SOURCE=y/CONFIG_FORTIFY_SOURCE=n/' .config
     yes | make oldconfig
     time ~/build/bin/scan-build -disable-checker core,unix,deadcode,nullability -enable-checker alpha.security.KernelMemoryDisclosure -o ~/analyzer make -j `grep -c ^processor /proc/cpuinfo` KBUILD_VERBOSE=1 2>&1 | tee ~/buildlog
 
