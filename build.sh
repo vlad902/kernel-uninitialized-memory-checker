@@ -18,8 +18,8 @@ else
   export CPUS=1
 fi
 
-wget http://releases.llvm.org/6.0.0/llvm-6.0.0.src.tar.xz
-wget http://releases.llvm.org/6.0.0/cfe-6.0.0.src.tar.xz
+wget https://releases.llvm.org/6.0.0/llvm-6.0.0.src.tar.xz
+wget https://releases.llvm.org/6.0.0/cfe-6.0.0.src.tar.xz
 
 tar -xf llvm-6.0.0.src.tar.xz
 tar -xf cfe-6.0.0.src.tar.xz

@@ -11,7 +11,7 @@ To run tests, run `~/build/bin/llvm-lit llvm/tools/clang/test/Analysis/kernel-me
 Run in a screen session in bash:
 
     cd /usr/src
-    time sudo ~/build/bin/scan-build --use-cc=/usr/bin/cc -disable-checker core,unix,deadcode,nullability -enable-checker alpha.security.KernelMemoryDisclosure -o ~/analyzer make -j `sysctl -n hw.ncpu` buildkernel COMPILER_TYPE=clang 2>&1 | tee ~/buildlog
+    time sudo ~/build/bin/scan-build --use-cc=/usr/bin/cc -disable-checker core,unix,deadcode,nullability -enable-checker alpha.security.KernelMemoryDisclosure -o ~/analyzer make -i -j `sysctl -n hw.ncpu` buildkernel COMPILER_TYPE=clang 2>&1 | tee ~/buildlog
 
 # Run against Linux kernel
 
@@ -25,14 +25,14 @@ Run in a screen session in bash:
     sed -i 's/CONFIG_READABLE_ASM=y/CONFIG_READABLE_ASM=n/' .config
     sed -i 's/CONFIG_HARDENED_USERCOPY=y/CONFIG_HARDENED_USERCOPY=n/' .config
     sed -i 's/CONFIG_FORTIFY_SOURCE=y/CONFIG_FORTIFY_SOURCE=n/' .config
-    yes | make oldconfig
-    time ~/build/bin/scan-build -disable-checker core,unix,deadcode,nullability -enable-checker alpha.security.KernelMemoryDisclosure -o ~/analyzer make -j `grep -c ^processor /proc/cpuinfo` KBUILD_VERBOSE=1 2>&1 | tee ~/buildlog
+    yes "" | make oldconfig
+    time ~/build/bin/scan-build -disable-checker core,unix,deadcode,nullability -enable-checker alpha.security.KernelMemoryDisclosure -o ~/analyzer make -i -j `grep -c ^processor /proc/cpuinfo` KBUILD_VERBOSE=1 2>&1 | tee ~/buildlog
 
 # Run against XNU kernel
 
 If you running the build on a newer (>10.12.3) version of XNU, you may want to run the [mig-parser](https://github.com/vlad902/mig-parser) to generate a fresh `MachInterface.h`. Run the following in the source tree:
 
-    rm -rf BUILD && time ~/build/bin/scan-build -disable-checker core,unix,deadcode,nullability -enable-checker alpha.security.KernelMemoryDisclosure -o ~/analyzer make SDKROOT=macosx ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE VERBOSE=YES 2>&1 | tee ~/buildlog
+    rm -rf BUILD && time ~/build/bin/scan-build -disable-checker core,unix,deadcode,nullability -enable-checker alpha.security.KernelMemoryDisclosure -o ~/analyzer make -i SDKROOT=macosx ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE VERBOSE=YES USE_WERROR=0 2>&1 | tee ~/buildlog
 
 # Run against Android kernel
 
@@ -56,4 +56,4 @@ Select and download a [kernel repo](https://source.android.com/source/building-k
 
     git checkout SOME_BRANCH
     make clean mrproper SOMECONFIGURATION_defconfig
-    time ~/build/bin/scan-build --analyzer-target $CLANG_TARGET --use-cc=${CROSS_COMPILE}gcc -disable-checker core,unix,deadcode,nullability -enable-checker alpha.security.KernelMemoryDisclosure -o ~/analyzer make -j `grep -c ^processor /proc/cpuinfo` V=1 2>&1 | tee ~/buildlog.android
+    time ~/build/bin/scan-build --analyzer-target $CLANG_TARGET --use-cc=${CROSS_COMPILE}gcc -disable-checker core,unix,deadcode,nullability -enable-checker alpha.security.KernelMemoryDisclosure -o ~/analyzer make -i -j `grep -c ^processor /proc/cpuinfo` V=1 2>&1 | tee ~/buildlog.android

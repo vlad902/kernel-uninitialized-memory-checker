@@ -925,7 +925,7 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
     ProgramStateRef State = C.getState();
     SVal L = Call.getArgSVal(4);
     SVal Val = Call.getArgSVal(1);
-    State = State->bindLoc(L, Val);
+    State = State->bindLoc(L, Val, C.getLocationContext());
     if (State->get<MIGArraySymbols>(L.getAsSymbol()))
       State = State->set<MIGArraySymbols>(L.getAsSymbol(), Val.getAsRegion());
 
