@@ -1,3 +1,4 @@
 *.swp
 llvm
 build
+z3
