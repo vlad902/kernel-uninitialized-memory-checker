@@ -41,16 +41,15 @@ else
   export CPUS=1
 fi
 
-wget https://releases.llvm.org/6.0.0/llvm-6.0.0.src.tar.xz
-wget https://releases.llvm.org/6.0.0/cfe-6.0.0.src.tar.xz
+git clone https://github.com/llvm-mirror/llvm.git
+cd llvm/tools
+git checkout 96dd58bd6cd91b5815c15e3b3d54dec9898c5db6
 
-tar -xf llvm-6.0.0.src.tar.xz
-tar -xf cfe-6.0.0.src.tar.xz
+git clone https://github.com/llvm-mirror/clang.git
+cd clang
+git checkout 956d9d40ee4e56da887d6fbb92ccea1b9dc2cdf7
 
-mv llvm-6.0.0.src llvm
-mv cfe-6.0.0.src llvm/tools/clang
-
-rm llvm-6.0.0.src.tar.xz cfe-6.0.0.src.tar.xz
+cd ../../..
 
 patch -p0 < $CURDIR/llvm.patch
 
