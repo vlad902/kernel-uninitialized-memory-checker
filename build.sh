@@ -43,11 +43,11 @@ fi
 
 git clone https://github.com/llvm-mirror/llvm.git
 cd llvm/tools
-git checkout 238f816f4c47e1de89fb4647c67bdfb5fb3da7dc
+git checkout 26b7b194d71816955660aa0b9397024396077924
 
 git clone https://github.com/llvm-mirror/clang.git
 cd clang
-git checkout d8cadd200135a319ef1a7ec2b7cabe210cfb3343
+git checkout c4bba57dc83b9a904715f281af1cf03488071640
 
 cd ../../..
 
