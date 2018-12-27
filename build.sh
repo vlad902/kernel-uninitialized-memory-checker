@@ -7,34 +7,28 @@ export CURDIR="$PWD/`dirname $0`"
 if [ `uname` = 'Linux' ]; then
   sudo apt install -y cmake clang bc libssl-dev
 
-  wget https://github.com/Z3Prover/z3/releases/download/z3-4.6.0/z3-4.6.0-x64-debian-8.10.zip
-  unzip z3-4.6.0-x64-debian-8.10.zip
-  mv z3-4.6.0-x64-debian-8.10 z3
-  rm z3-4.6.0-x64-debian-8.10.zip
+  wget https://github.com/Z3Prover/z3/releases/download/z3-4.8.4/z3-4.8.4.d6df51951f4c-x64-debian-8.11.zip
+  unzip z3-4.8.4.d6df51951f4c-x64-debian-8.11.zip
+  mv z3-4.8.4.d6df51951f4c-x64-debian-8.11 z3
+  rm z3-4.8.4.d6df51951f4c-x64-debian-8.11.zip
   sudo ln -s `pwd`/z3/bin/libz3.so /usr/lib/libz3.so
-  export Z3_EXE=$CURDIR/z3/bin/z3
-  export Z3_LIB=$CURDIR/z3/bin/libz3.so
-  export Z3_INC=$CURDIR/z3/include
+  export Z3_DIR=$CURDIR/z3
 
   export CPUS=`grep -c ^processor /proc/cpuinfo`
 elif [ `uname` = 'FreeBSD' ]; then
   sudo pkg install -y git cmake wget z3
   sudo ln -s /usr/local/bin/perl /usr/bin/perl
 
-  export Z3_EXE=/usr/local/bin/z3
-  export Z3_LIB=/usr/local/lib/libz3.so
-  export Z3_INC=/usr/local/include
+  export Z3_DIR=/usr/local
 
   export CPUS=`sysctl -n hw.ncpu`
 elif [ `uname` = 'Darwin' ]; then
-  wget https://github.com/Z3Prover/z3/releases/download/z3-4.6.0/z3-4.6.0-x64-osx-10.11.6.zip
-  unzip z3-4.6.0-x64-osx-10.11.6.zip
-  mv z3-4.6.0-x64-osx-10.11.6 z3
-  rm z3-4.6.0-x64-osx-10.11.6.zip
+  wget https://github.com/Z3Prover/z3/releases/download/z3-4.8.4/z3-4.8.4.d6df51951f4c-x64-osx-10.14.1.zip
+  unzip z3-4.8.4.d6df51951f4c-x64-osx-10.14.1.zip
+  mv z3-4.8.4.d6df51951f4c-x64-osx-10.14.1 z3
+  rm z3-4.8.4.d6df51951f4c-x64-osx-10.14.1.zip
   sudo ln -s `pwd`/z3/bin/libz3.dylib /usr/local/lib/libz3.dylib
-  export Z3_EXE=$CURDIR/z3/bin/z3
-  export Z3_LIB=$CURDIR/z3/bin/libz3.dylib
-  export Z3_INC=$CURDIR/z3/include
+  export Z3_DIR=$CURDIR/z3
 
   export CPUS=`sysctl -n hw.ncpu`
 else
@@ -43,11 +37,11 @@ fi
 
 git clone https://github.com/llvm-mirror/llvm.git
 cd llvm/tools
-git checkout 26b7b194d71816955660aa0b9397024396077924
+git checkout 718039ebb75d709b91dcc3ca18eddedb283892fd
 
 git clone https://github.com/llvm-mirror/clang.git
 cd clang
-git checkout c4bba57dc83b9a904715f281af1cf03488071640
+git checkout 27ff8dcc77fd7c9f1bcf181b25eaa7d68777fdfe
 
 cd ../../..
 
@@ -61,10 +55,8 @@ mkdir build
 cd build
 
 cmake \
-  -DZ3_EXECUTABLE=$Z3_EXE \
-  -DZ3_INCLUDE_DIR=$Z3_INC \
-  -DZ3_LIBRARIES=$Z3_LIB \
-  -DCLANG_ANALYZER_BUILD_Z3=ON \
+  -DCLANG_ANALYZER_ENABLE_Z3_SOLVER=ON \
+  -DCLANG_ANALYZER_Z3_INSTALL_DIR=$Z3_DIR \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_TARGETS_TO_BUILD="X86;ARM;AArch64" \
   ../llvm

@@ -3,11 +3,11 @@ diff -ur llvm-3.9.1-original/tools/clang/include/clang/StaticAnalyzer/Checkers/C
 +++ llvm/tools/clang/include/clang/StaticAnalyzer/Checkers/Checkers.td	2016-12-28 15:22:59.000000000 +0700
 @@ -342,6 +342,10 @@
    HelpText<"Check for overflows in the arguments to malloc()">,
-   DescFile<"MallocOverflowSecurityChecker.cpp">;
+   Documentation<HasAlphaDocumentation>;
  
 +def KernelMemoryDisclosureChecker : Checker<"KernelMemoryDisclosure">,
 +  HelpText<"Check for uninitialized kernel memory disclosure">,
-+  DescFile<"KernelMemoryDisclosureChecker.cpp">;
++  Documentation<HasAlphaDocumentation>;
 +
  } // end "alpha.security"
  

@@ -21,9 +21,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ClangSACheckers.h"
 #include "clang/AST/ParentMap.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
@@ -142,8 +142,7 @@ class KernelMemoryDisclosureChecker
 
   // Bug visitor that prints additional information for 'partially sanitized'
   // field bugs, indicating the line where the partial sanitization takes place.
-  class UnsanitizedBugVisitor
-      : public BugReporterVisitorImpl<UnsanitizedBugVisitor> {
+  class UnsanitizedBugVisitor final : public BugReporterVisitor {
   private:
     const MemRegion *MR;
 
@@ -154,7 +153,6 @@ class KernelMemoryDisclosureChecker
     // Walk backwards from the copyout() to the point where the unsanitized
     // region was marked and indicate it in the output
     std::shared_ptr<PathDiagnosticPiece> VisitNode(const ExplodedNode *N,
-                                                   const ExplodedNode *PrevN,
                                                    BugReporterContext &BRC,
                                                    BugReport &BR) override;
   };
@@ -184,7 +182,7 @@ public:
   void checkBeginFunction(CheckerContext &C) const;
   // If this is an XNU MIG function with an unlimited size array OUT argument,
   // check if it might have leaked any uninitialized data.
-  void checkEndFunction(CheckerContext &C) const;
+  void checkEndFunction(const ReturnStmt *RS, CheckerContext &C) const;
 #endif
 };
 
@@ -1022,7 +1020,8 @@ void KernelMemoryDisclosureChecker::checkBeginFunction(
   C.addTransition(State);
 }
 
-void KernelMemoryDisclosureChecker::checkEndFunction(CheckerContext &C) const {
+void KernelMemoryDisclosureChecker::checkEndFunction(const ReturnStmt *RS,
+                                                     CheckerContext &C) const {
   const auto *LCtx = C.getLocationContext();
   const FunctionDecl *FD = dyn_cast<FunctionDecl>(LCtx->getDecl());
   if (!FD)
@@ -1067,8 +1066,8 @@ void KernelMemoryDisclosureChecker::checkEndFunction(CheckerContext &C) const {
 
 std::shared_ptr<PathDiagnosticPiece>
 KernelMemoryDisclosureChecker::UnsanitizedBugVisitor::VisitNode(
-    const ExplodedNode *N, const ExplodedNode *PrevN, BugReporterContext &BRC,
-    BugReport &BR) {
+    const ExplodedNode *N, BugReporterContext &BRC, BugReport &BR) {
+  const ExplodedNode *PrevN = N->getFirstPred();
 
   if (!N->getState()->contains<UnsanitizedRegions>(MR) &&
       !N->getState()->contains<UnsanitizedRegions>(MR->StripCasts()))
