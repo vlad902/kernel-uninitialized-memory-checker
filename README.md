@@ -12,6 +12,8 @@ To run with the z3 constraint manager (very slow!) add the `-constraints z3` fla
 
 # Run against FreeBSD kernel
 
+Note (12/28/18): The `#define malloc()` macro in sys/malloc.h can confuse clang analyzer and cause false positives. Removing its definition will not change program semantics and will improve analyzer results.
+
 Run in a screen session in bash:
 
     cd /usr/src
