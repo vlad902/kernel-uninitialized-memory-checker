@@ -68,7 +68,8 @@ class KernelMemoryDisclosureChecker
       *II_kmalloc_array, *II_sock_kmalloc, *II_kalloc, *II___MALLOC,
       *II___memset, *II_memset, *II_bzero, *II___memzero, *II___memcpy,
       *II_memcpy, *II_memmove, *II_bcopy, *II_strcpy, *II_strlcpy, *II_strncpy,
-      *II_sprintf, *II_snprintf, *II_vm_map_copyin;
+      *II_sprintf, *II_snprintf, *II_vm_map_copyin, *II___builtin_memcpy,
+      *II___builtin_memset;
 
   void initInternalFields(ASTContext &Ctx) const;
 
@@ -276,6 +277,8 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
   RESOLVE(sprintf)
   RESOLVE(snprintf)
   RESOLVE(vm_map_copyin)
+  RESOLVE(__builtin_memcpy)
+  RESOLVE(__builtin_memset)
 
 #undef RESOLVE
 }
@@ -676,7 +679,7 @@ void KernelMemoryDisclosureChecker::checkIfRegionUninitialized(
     SmallString<256> buf;
     llvm::raw_svector_ostream os(buf);
     os << "Copies out a struct with uncleared padding (>= " << Padding
-       << " bytes)";
+       << " contiguous bytes)";
 
     if (!ErrorNode)
       ErrorNode = C.generateNonFatalErrorNode(State);
@@ -891,7 +894,7 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
     return;
   else if (Callee == II_memset || Callee == II___memset || Callee == II_bzero ||
            Callee == II___memzero || Callee == II_copy_from_user ||
-           Callee == II___copy_from_user)
+           Callee == II___copy_from_user || Callee == II___builtin_memset)
     sanitizeArg(Call, C, 0);
   else if (Callee == II_copyin || Callee == II_sooptcopyin)
     sanitizeArg(Call, C, 1);
@@ -899,7 +902,8 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
            Callee == II_sprintf || Callee == II_snprintf)
     unsanitizeArg(Call, C, 0);
   else if (Callee == II_memcpy || Callee == II___memcpy ||
-           Callee == II_memmove || Callee == II_strncpy)
+           Callee == II_memmove || Callee == II_strncpy ||
+           Callee == II___builtin_memcpy)
     handleMemcopy(Call, C, 0, 2);
   else if (Callee == II_bcopy)
     handleMemcopy(Call, C, 1, 2);

@@ -32,13 +32,21 @@ void struct_initialization_functions() {
   memcpy(&foo3, NULL, sizeof(foo3));
   copyout(&foo3, NULL, sizeof(foo3));
 
-  // FreeBSD
   struct padded_struct foo4;
+  __builtin_memset(&foo4, 0, sizeof(foo4));
+  copyout(&foo4, NULL, sizeof(foo4));
+
+  struct padded_struct foo5;
+  __builtin_memcpy(&foo5, NULL, sizeof(foo5));
+  copyout(&foo5, NULL, sizeof(foo5));
+
+  // FreeBSD
+  struct padded_struct foo6;
   copyin(NULL, &foo4, sizeof(foo4));
   copyout(&foo4, NULL, sizeof(foo4));
 
   // Linux
-  struct padded_struct foo5;
+  struct padded_struct foo7;
   copy_from_user(&foo5, NULL, sizeof(foo5));
   copy_to_user(NULL, &foo5, sizeof(foo5));
 }

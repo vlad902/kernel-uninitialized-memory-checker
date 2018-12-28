@@ -62,3 +62,19 @@ void initialized_struct() {
   foo3 = foo1;
   copyout(&foo3, NULL, sizeof(foo3));
 }
+
+void packed_struct() {
+  struct __attribute__((__packed__)) packed_struct {
+    char c;
+    int i;
+  } packed;
+  packed.c = packed.i = 0;
+  copy_to_user(NULL, &packed, sizeof(packed));
+
+  struct __attribute__((__packed__)) nested_and_packed_struct {
+    struct packed_struct p1, p2;
+  } nested_and_packed;
+  nested_and_packed.p1.c = nested_and_packed.p1.i = 0;
+  nested_and_packed.p2.c = nested_and_packed.p2.i = 0;
+  copy_to_user(NULL, &nested_and_packed, sizeof(nested_and_packed));
+}
