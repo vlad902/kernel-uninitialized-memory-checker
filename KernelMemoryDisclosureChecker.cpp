@@ -138,7 +138,7 @@ class KernelMemoryDisclosureChecker
   // Mark the given argument value of this call sanitized.
   void sanitizeArg(const CallEvent &Call, CheckerContext &C, int Arg) const;
   // Mark the given argument value of this call unsanitized, e.g. only
-  // partially initialized.
+  // partially initialized, if it's not already sanitized.
   void unsanitizeArg(const CallEvent &Call, CheckerContext &C, int Arg) const;
 
   // Bug visitor that prints additional information for 'partially sanitized'
@@ -223,8 +223,8 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
       new BugType(this, "Unsanitized struct padding", "Memory Disclosure"));
   BTUnreferencedFields.reset(
       new BugType(this, "Unreferenced struct element", "Memory Disclosure"));
-  BTUnsanitizedFields.reset(new BugType(
-      this, "Partially unsanitized struct element", "Memory Disclosure"));
+  BTUnsanitizedFields.reset(
+      new BugType(this, "Partially unsanitized element", "Memory Disclosure"));
   BTUnionFieldSizes.reset(
       new BugType(this, "Partially sanitized union (elements vary in size)",
                   "Memory Disclosure"));
@@ -633,7 +633,7 @@ void KernelMemoryDisclosureChecker::checkIfRegionUninitialized(
           isRegionUnsanitized(MR, State, entireRegionCopied)) {
     SmallString<256> buf;
     llvm::raw_svector_ostream os(buf);
-    os << "Copies out a struct with a partially unsanitized field";
+    os << "Copies out a partially unsanitized field: " << Unsan->getString();
 
     if (!ErrorNode)
       ErrorNode = C.generateNonFatalErrorNode(State);
@@ -835,6 +835,10 @@ void KernelMemoryDisclosureChecker::unsanitizeArg(const CallEvent &Call,
                                                   int Arg) const {
   const MemRegion *MR = Call.getArgSVal(Arg).getAsRegion();
   if (!MR)
+    return;
+
+  // Ignore regions already explicitly sanitized.
+  if (C.getState()->contains<SanitizedRegions>(MR->StripCasts()))
     return;
 
   ProgramStateRef State =
