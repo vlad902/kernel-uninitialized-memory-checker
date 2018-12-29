@@ -19,7 +19,7 @@ void copyout_functions() {
   copy_to_user(NULL, &foo, sizeof(foo)); // expected-warning{{Copies out a struct with uncleared padding}}
 }
 
-void struct_initialization_functions() {
+void struct_initialization_functions1() {
   struct padded_struct foo1;
   bzero(&foo1, sizeof(foo1));
   copyout(&foo1, NULL, sizeof(foo1));
@@ -31,24 +31,36 @@ void struct_initialization_functions() {
   struct padded_struct foo3;
   memcpy(&foo3, NULL, sizeof(foo3));
   copyout(&foo3, NULL, sizeof(foo3));
+}
+
+void struct_initialization_functions2() {
+  struct padded_struct foo1;
+  __builtin_memset(&foo1, 0, sizeof(foo1));
+  copyout(&foo1, NULL, sizeof(foo1));
+
+  struct padded_struct foo2;
+  __builtin_memcpy(&foo2, NULL, sizeof(foo2));
+  copyout(&foo2, NULL, sizeof(foo2));
+
+  struct padded_struct foo3;
+  __builtin___memset_chk(&foo3, 0, sizeof(foo3), __builtin_object_size(&foo3, 0));
+  copyout(&foo3, NULL, sizeof(foo3));
 
   struct padded_struct foo4;
-  __builtin_memset(&foo4, 0, sizeof(foo4));
+  __builtin___memcpy_chk(&foo4, NULL, sizeof(foo4), __builtin_object_size(&foo4, 0));
   copyout(&foo4, NULL, sizeof(foo4));
+}
 
-  struct padded_struct foo5;
-  __builtin_memcpy(&foo5, NULL, sizeof(foo5));
-  copyout(&foo5, NULL, sizeof(foo5));
-
+void struct_initialization_functions333() {
   // FreeBSD
-  struct padded_struct foo6;
-  copyin(NULL, &foo4, sizeof(foo4));
-  copyout(&foo4, NULL, sizeof(foo4));
+  struct padded_struct foo1;
+  copyin(NULL, &foo1, sizeof(foo1));
+  copyout(&foo1, NULL, sizeof(foo1));
 
   // Linux
-  struct padded_struct foo7;
-  copy_from_user(&foo5, NULL, sizeof(foo5));
-  copy_to_user(NULL, &foo5, sizeof(foo5));
+  struct padded_struct foo2;
+  copy_from_user(&foo2, NULL, sizeof(foo2));
+  copy_to_user(NULL, &foo2, sizeof(foo2));
 }
 
 void memcpy_by_reference() {

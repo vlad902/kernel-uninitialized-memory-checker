@@ -256,6 +256,7 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
   RESOLVE(InitializesFirstArg, memset)
   RESOLVE(InitializesFirstArg, __memset)
   RESOLVE(InitializesFirstArg, __builtin_memset)
+  RESOLVE(InitializesFirstArg, __builtin___memset_chk)
   RESOLVE(InitializesFirstArg, bzero)
   RESOLVE(InitializesFirstArg, __memzero)
   RESOLVE(InitializesFirstArg, copy_from_user)
@@ -265,15 +266,24 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
   RESOLVE(InitializesSecondArg, sooptcopyin)
 
   RESOLVE(UnsanitizedFirstArg, strcpy)
+  RESOLVE(UnsanitizedFirstArg, __builtin_strcpy)
+  RESOLVE(UnsanitizedFirstArg, __builtin___strcpy_chk)
   RESOLVE(UnsanitizedFirstArg, strlcpy)
+  RESOLVE(UnsanitizedFirstArg, __builtin_strlcpy)
+  RESOLVE(UnsanitizedFirstArg, __builtin___strlcpy_chk)
   RESOLVE(UnsanitizedFirstArg, sprintf)
   RESOLVE(UnsanitizedFirstArg, snprintf)
 
   RESOLVE(MemcpyLike, memcpy)
   RESOLVE(MemcpyLike, __memcpy)
-  RESOLVE(MemcpyLike, memmove)
-  RESOLVE(MemcpyLike, strncpy)
   RESOLVE(MemcpyLike, __builtin_memcpy)
+  RESOLVE(MemcpyLike, __builtin___memcpy_chk)
+  RESOLVE(MemcpyLike, memmove)
+  RESOLVE(MemcpyLike, __builtin_memmove)
+  RESOLVE(MemcpyLike, __builtin___memmove_chk)
+  RESOLVE(MemcpyLike, strncpy)
+  RESOLVE(MemcpyLike, __builtin_strncpy)
+  RESOLVE(MemcpyLike, __builtin___strncpy_chk)
 
 #undef RESOLVE
 
