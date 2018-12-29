@@ -38,3 +38,17 @@ void zero_length_field() {
   s.i = 0;
   copyout(&s, NULL, sizeof(s));
 }
+
+void memset_field() {
+  struct {
+    int i;
+    struct {
+      int a;
+      char b[4];
+    } j;
+  } s;
+  s.i = 0;
+  memset(&s.j, 0, sizeof(s.j));
+  memcpy(&s.j, NULL, s.i);
+  copyout(&s, NULL, sizeof(s));
+}

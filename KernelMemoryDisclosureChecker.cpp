@@ -514,6 +514,10 @@ bool KernelMemoryDisclosureChecker::isRegionSanitized(
 
 const MemRegion *KernelMemoryDisclosureChecker::isRegionUnsanitized(
     const MemRegion *MR, ProgramStateRef State, bool entireRegionCopied) const {
+  if (State->contains<SanitizedRegions>(MR) ||
+      State->contains<SanitizedRegions>(MR->StripCasts()))
+    return NULL;
+
   // Is the entire region marked unsanitized?
   if (State->contains<UnsanitizedRegions>(MR))
     return entireRegionCopied ? MR : NULL;
@@ -525,8 +529,13 @@ const MemRegion *KernelMemoryDisclosureChecker::isRegionUnsanitized(
   UnsanitizedRegionsTy Regions = State->get<UnsanitizedRegions>();
   for (const MemRegion *Unsan : Regions) {
     const SubRegion *SR = Unsan->getAs<SubRegion>();
-    if (SR && (SR->isSubRegionOf(MR) || SR->isSubRegionOf(MR->StripCasts())))
-      return SR;
+    if (!SR)
+      continue;
+    if (SR->isSubRegionOf(MR) || SR->isSubRegionOf(MR->StripCasts())) {
+      if (!State->contains<SanitizedRegions>(SR) &&
+          !State->contains<SanitizedRegions>(SR->StripCasts()))
+        return SR;
+    }
   }
 
   return NULL;
@@ -862,10 +871,6 @@ void KernelMemoryDisclosureChecker::unsanitizeArg(const CallEvent &Call,
                                                   int Arg) const {
   const MemRegion *MR = Call.getArgSVal(Arg).getAsRegion();
   if (!MR)
-    return;
-
-  // Ignore regions already explicitly sanitized.
-  if (C.getState()->contains<SanitizedRegions>(MR->StripCasts()))
     return;
 
   ProgramStateRef State =
