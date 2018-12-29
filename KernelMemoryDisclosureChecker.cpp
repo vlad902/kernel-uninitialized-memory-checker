@@ -21,6 +21,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <set>
+
 #include "clang/AST/ParentMap.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
@@ -61,15 +63,17 @@ class KernelMemoryDisclosureChecker
 #endif
 
   // Set of the functions below to quickly check if it's one of interest.
-  mutable llvm::SmallSet<const IdentifierInfo *, 32> FunctionWhitelist;
+  mutable std::set<const IdentifierInfo *> FunctionWhitelist;
+
+  // Individually cached function identifiers
   mutable const IdentifierInfo *II_copyout, *II_sooptcopyout, *II_copy_to_user,
-      *II___copy_to_user, *II_copyin, *II_sooptcopyin, *II_copy_from_user,
-      *II___copy_from_user, *II_malloc, *II_kmem_alloc, *II_kmalloc,
-      *II_kmalloc_array, *II_sock_kmalloc, *II_kalloc, *II___MALLOC,
-      *II___memset, *II_memset, *II_bzero, *II___memzero, *II___memcpy,
-      *II_memcpy, *II_memmove, *II_bcopy, *II_strcpy, *II_strlcpy, *II_strncpy,
-      *II_sprintf, *II_snprintf, *II_vm_map_copyin, *II___builtin_memcpy,
-      *II___builtin_memset;
+      *II___copy_to_user, *II_malloc, *II_kmem_alloc, *II_kmalloc,
+      *II_kmalloc_array, *II_sock_kmalloc, *II_kalloc, *II___MALLOC, *II_bcopy,
+      *II_vm_map_copyin;
+
+  // Function groups
+  mutable llvm::SmallSet<const IdentifierInfo *, 16> InitializesFirstArg,
+      InitializesSecondArg, UnsanitizedFirstArg, MemcpyLike;
 
   void initInternalFields(ASTContext &Ctx) const;
 
@@ -243,6 +247,37 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
   }
 #endif
 
+  // Resolve function groups
+#define RESOLVE(group, function)                                               \
+  IdentifierInfo *II_##function = &Ctx.Idents.get(#function);                  \
+  group.insert(II_##function);                                                 \
+  FunctionWhitelist.insert(II_##function);
+
+  RESOLVE(InitializesFirstArg, memset)
+  RESOLVE(InitializesFirstArg, __memset)
+  RESOLVE(InitializesFirstArg, __builtin_memset)
+  RESOLVE(InitializesFirstArg, bzero)
+  RESOLVE(InitializesFirstArg, __memzero)
+  RESOLVE(InitializesFirstArg, copy_from_user)
+  RESOLVE(InitializesFirstArg, __copy_from_user)
+
+  RESOLVE(InitializesSecondArg, copyin)
+  RESOLVE(InitializesSecondArg, sooptcopyin)
+
+  RESOLVE(UnsanitizedFirstArg, strcpy)
+  RESOLVE(UnsanitizedFirstArg, strlcpy)
+  RESOLVE(UnsanitizedFirstArg, sprintf)
+  RESOLVE(UnsanitizedFirstArg, snprintf)
+
+  RESOLVE(MemcpyLike, memcpy)
+  RESOLVE(MemcpyLike, __memcpy)
+  RESOLVE(MemcpyLike, memmove)
+  RESOLVE(MemcpyLike, strncpy)
+  RESOLVE(MemcpyLike, __builtin_memcpy)
+
+#undef RESOLVE
+
+  // Resolve individual functions
 #define RESOLVE(function)                                                      \
   II_##function = &Ctx.Idents.get(#function);                                  \
   FunctionWhitelist.insert(II_##function);
@@ -251,10 +286,6 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
   RESOLVE(sooptcopyout)
   RESOLVE(copy_to_user)
   RESOLVE(__copy_to_user)
-  RESOLVE(copyin)
-  RESOLVE(sooptcopyin)
-  RESOLVE(copy_from_user)
-  RESOLVE(__copy_from_user)
   RESOLVE(malloc)
   RESOLVE(kmem_alloc)
   RESOLVE(kmalloc)
@@ -263,22 +294,8 @@ void KernelMemoryDisclosureChecker::initInternalFields(ASTContext &Ctx) const {
   RESOLVE(kalloc)
   // TODO: kalloc_canblock on XNU
   RESOLVE(__MALLOC)
-  RESOLVE(__memset)
-  RESOLVE(memset)
-  RESOLVE(bzero)
-  RESOLVE(__memzero)
-  RESOLVE(__memcpy)
-  RESOLVE(memcpy)
-  RESOLVE(memmove)
   RESOLVE(bcopy)
-  RESOLVE(strcpy)
-  RESOLVE(strlcpy)
-  RESOLVE(strncpy)
-  RESOLVE(sprintf)
-  RESOLVE(snprintf)
   RESOLVE(vm_map_copyin)
-  RESOLVE(__builtin_memcpy)
-  RESOLVE(__builtin_memset)
 
 #undef RESOLVE
 }
@@ -896,18 +913,13 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
   const IdentifierInfo *Callee = FD->getIdentifier();
   if (!FunctionWhitelist.count(Callee))
     return;
-  else if (Callee == II_memset || Callee == II___memset || Callee == II_bzero ||
-           Callee == II___memzero || Callee == II_copy_from_user ||
-           Callee == II___copy_from_user || Callee == II___builtin_memset)
+  else if (InitializesFirstArg.count(Callee))
     sanitizeArg(Call, C, 0);
-  else if (Callee == II_copyin || Callee == II_sooptcopyin)
+  else if (InitializesSecondArg.count(Callee))
     sanitizeArg(Call, C, 1);
-  else if (Callee == II_strlcpy || Callee == II_strcpy ||
-           Callee == II_sprintf || Callee == II_snprintf)
+  else if (UnsanitizedFirstArg.count(Callee))
     unsanitizeArg(Call, C, 0);
-  else if (Callee == II_memcpy || Callee == II___memcpy ||
-           Callee == II_memmove || Callee == II_strncpy ||
-           Callee == II___builtin_memcpy)
+  else if (MemcpyLike.count(Callee))
     handleMemcopy(Call, C, 0, 2);
   else if (Callee == II_bcopy)
     handleMemcopy(Call, C, 1, 2);
