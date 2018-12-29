@@ -516,14 +516,14 @@ const MemRegion *KernelMemoryDisclosureChecker::isRegionUnsanitized(
     const MemRegion *MR, ProgramStateRef State, bool entireRegionCopied) const {
   if (State->contains<SanitizedRegions>(MR) ||
       State->contains<SanitizedRegions>(MR->StripCasts()))
-    return NULL;
+    return nullptr;
 
   // Is the entire region marked unsanitized?
   if (State->contains<UnsanitizedRegions>(MR))
-    return entireRegionCopied ? MR : NULL;
+    return entireRegionCopied ? MR : nullptr;
 
   if (State->contains<UnsanitizedRegions>(MR->StripCasts()))
-    return entireRegionCopied ? MR->StripCasts() : NULL;
+    return entireRegionCopied ? MR->StripCasts() : nullptr;
 
   // Loop over unsanitized regions and check whether they are a subregion
   UnsanitizedRegionsTy Regions = State->get<UnsanitizedRegions>();
@@ -538,7 +538,7 @@ const MemRegion *KernelMemoryDisclosureChecker::isRegionUnsanitized(
     }
   }
 
-  return NULL;
+  return nullptr;
 }
 
 void KernelMemoryDisclosureChecker::queryReferencedFields(
@@ -664,7 +664,7 @@ void KernelMemoryDisclosureChecker::checkIfRegionUninitialized(
     entireRegionCopied = !TrueState && FalseState;
   }
 
-  ExplodedNode *ErrorNode = NULL;
+  ExplodedNode *ErrorNode = nullptr;
   if (const MemRegion *Unsan =
           isRegionUnsanitized(MR, State, entireRegionCopied)) {
     SmallString<256> buf;
@@ -909,7 +909,7 @@ void KernelMemoryDisclosureChecker::checkPostCall(const CallEvent &Call,
     const MemRegion *MR = Call.getArgSVal(i).getAsRegion();
     printf("- Arg %i: MR = %p (%i), MR->StripCasts() = %p (%i)\n", i,
            (const void *)MR, MR ? MR->getKind() : 0,
-           MR ? (const void *)MR->StripCasts() : NULL,
+           MR ? (const void *)MR->StripCasts() : nullptr,
            MR ? MR->StripCasts()->getKind() : 0);
     fflush(stdout);
     Call.getArgSVal(i).dump();
@@ -1049,7 +1049,7 @@ void KernelMemoryDisclosureChecker::checkBeginFunction(
     Loc ArgLoc = State->getLValue(PVD, LCtx);
     SVal Arg = State->getSVal(ArgLoc);
 
-    State = State->set<MIGArraySymbols>(Arg.getAsSymbol(), NULL);
+    State = State->set<MIGArraySymbols>(Arg.getAsSymbol(), nullptr);
   }
 
   C.addTransition(State);
@@ -1081,7 +1081,7 @@ void KernelMemoryDisclosureChecker::checkEndFunction(const ReturnStmt *RS,
     Loc ArgLoc = State->getLValue(PVD, LCtx);
     SVal Arg = State->getSVal(ArgLoc);
 
-    const MemRegion *MR = NULL;
+    const MemRegion *MR = nullptr;
     if (auto Var = State->get<MIGArraySymbols>(Arg.getAsSymbol())) {
       MR = *Var;
       State = State->remove<MIGArraySymbols>(Arg.getAsSymbol());
