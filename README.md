@@ -45,7 +45,7 @@ Run in a screen session in bash:
 
 # Run against XNU kernel
 
-If you running the build on a newer (>10.12.3) version of XNU, you may want to run the [mig-parser](https://github.com/vlad902/mig-parser) to generate a fresh `MachInterface.h`. Run the following in the source tree:
+If you running the build on a newer (>10.14.1) version of XNU, you may want to run the [mig-parser](https://github.com/vlad902/mig-parser) to generate a fresh `MachInterface.h`. Run the following in the source tree:
 
     rm -rf BUILD
     time ~/build/bin/scan-build \
