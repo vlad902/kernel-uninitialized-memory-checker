@@ -14,10 +14,10 @@
 // 1) Copying structs with uncleared alignment padding
 // 2) Copying structs with fields that have not been set
 // 3) Copying struct fields or variables that were left partially uninitialized,
-// e.g. if you strcpy(struct.field, "foo") the end of the field will be left
-// uninitialized if struct.field is wider than 4 bytes
+//    e.g. if you strcpy(struct.field, "foo") the end of the field will be left
+//    uninitialized if struct.field is wider than 4 bytes
 // 4) Copying unions (or union fields in structs) that have fields of different
-// sizes where space was left uninitialized.
+//    sizes where space was left uninitialized.
 //
 //===----------------------------------------------------------------------===//
 
@@ -487,7 +487,7 @@ size_t KernelMemoryDisclosureChecker::isRegionPadded(
 bool KernelMemoryDisclosureChecker::isRegionSanitized(
     const MemRegion *MR, ProgramStateRef State) const {
 
-  // HEURISTIC: If this region is not on the stack and we did not see an
+  // Heuristic: If this region is not on the stack and we did not see an
   // explicit dynamic allocation for it, consider it sanitized (this cuts down
   // of many FPs where we did not see the region initialized/sanitized, but
   // cuts down some TPs too)
