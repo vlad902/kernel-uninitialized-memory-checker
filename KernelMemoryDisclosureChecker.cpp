@@ -648,11 +648,10 @@ void KernelMemoryDisclosureChecker::checkIfRegionUninitialized(
 
   SValBuilder &SVB = C.getSValBuilder();
   DefinedOrUnknownSVal RegionSize = Uncast->getExtent(SVB);
-  DefinedOrUnknownSVal CopySize = Size.castAs<DefinedOrUnknownSVal>();
 
   bool entireRegionCopied = false;
   SVal Comparison =
-      SVB.evalBinOp(State, BO_LT, CopySize, RegionSize, SVB.getConditionType());
+      SVB.evalBinOp(State, BO_LT, Size, RegionSize, SVB.getConditionType());
   if (!Comparison.isUnknownOrUndef()) {
     ProgramStateRef TrueState, FalseState;
     std::tie(TrueState, FalseState) =
@@ -784,8 +783,7 @@ void KernelMemoryDisclosureChecker::handleMemcopy(const CallEvent &Call,
   SValBuilder &SVB = C.getSValBuilder();
   ProgramStateRef State = C.getState();
 
-  DefinedOrUnknownSVal CopySize =
-      Call.getArgSVal(SizeArg).castAs<DefinedOrUnknownSVal>();
+  SVal CopySize = Call.getArgSVal(SizeArg);
   DefinedOrUnknownSVal RegionSize = SR->getExtent(SVB);
   SVal Comparison =
       SVB.evalBinOp(State, BO_GE, CopySize, RegionSize, SVB.getConditionType());

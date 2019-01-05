@@ -5,7 +5,7 @@ set -e
 export CURDIR="$PWD/`dirname $0`"
 
 if [ `uname` = 'Linux' ]; then
-  sudo apt install -y cmake clang bc libssl-dev
+  sudo apt install -y cmake clang bc libssl-dev unzip
 
   wget https://github.com/Z3Prover/z3/releases/download/z3-4.8.4/z3-4.8.4.d6df51951f4c-x64-debian-8.11.zip
   unzip z3-4.8.4.d6df51951f4c-x64-debian-8.11.zip
